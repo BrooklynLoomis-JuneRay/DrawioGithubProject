@@ -71,6 +71,64 @@ function toggleForm() {
     title.textContent = login.classList.contains("hidden") ? "Register" : "Login";
 }
 </script>
+    
+<script>
+let users = [];
 
+// Load users from JSON + localStorage
+async function loadUsers() {
+    const response = await fetch('users.json');
+    const data = await response.json();
+
+    const localUsers = JSON.parse(localStorage.getItem("users")) || [];
+
+    users = [...data, ...localUsers];
+}
+
+loadUsers();
+
+// LOGIN
+document.getElementById("login-form").addEventListener("submit", function(e) {
+    e.preventDefault();
+
+    const username = this.querySelector("input[type='text']").value;
+    const password = this.querySelector("input[type='password']").value;
+
+    const found = users.find(u => u.username === username && u.password === password);
+
+    if (found) {
+        alert("ACCESS GRANTED");
+    } else {
+        alert("ACCESS DENIED");
+    }
+});
+
+// REGISTER
+document.getElementById("register-form").addEventListener("submit", function(e) {
+    e.preventDefault();
+
+    const inputs = this.querySelectorAll("input");
+    const username = inputs[0].value;
+    const email = inputs[1].value;
+    const password = inputs[2].value;
+
+    const exists = users.find(u => u.username === username);
+
+    if (exists) {
+        alert("USER ALREADY EXISTS");
+        return;
+    }
+
+    const newUser = { username, password };
+
+    // Save to localStorage (since we can't write to JSON)
+    const localUsers = JSON.parse(localStorage.getItem("users")) || [];
+    localUsers.push(newUser);
+    localStorage.setItem("users", JSON.stringify(localUsers));
+
+    alert("USER REGISTERED (LOCAL)");
+    location.reload();
+});
+</script>
 </body>
 </html>
