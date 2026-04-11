@@ -5,18 +5,84 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard</title>
     <link rel="stylesheet" href="styles.css">
+
+    <style>
+        /* Layout */
+        .dashboard-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 200px;
+            padding: 20px;
+            border-right: 1px solid #00ff99;
+        }
+
+        .sidebar button {
+            width: 100%;
+            margin-bottom: 20px;
+        }
+
+        /* Main content */
+        .main-content {
+            flex: 1;
+            padding: 20px;
+        }
+
+        /* Header */
+        .dashboard-header {
+            margin-bottom: 20px;
+            border-bottom: 1px solid #00ff99;
+            padding-bottom: 10px;
+        }
+
+        /* Section */
+        .projects-section h3 {
+            margin-bottom: 15px;
+        }
+
+        /* Project card */
+        .project-card {
+            border: 1px solid #00ff99;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px #00ff99;
+        }
+    </style>
 </head>
 <body>
 
-<div class="container">
-    <div class="form-box">
-        <h2>SYSTEM DASHBOARD</h2>
-        <p id="welcome-text"></p>
+<div class="dashboard-container">
 
+    <!-- LEFT SIDEBAR -->
+    <div class="sidebar">
+        <button id="new-project-btn">+ New Project</button>
         <button id="logout-btn">Logout</button>
+    </div>
+
+    <!-- MAIN AREA -->
+    <div class="main-content">
+
+        <!-- HEADER -->
+        <div class="dashboard-header">
+            <h2 id="welcome-text">Loading...</h2>
+        </div>
+
+        <!-- PROJECTS SECTION -->
+        <div class="projects-section">
+            <h3>Previous Projects</h3>
+
+            <div class="project-card">
+                <p>No previous projects. Start your first one?</p>
+            </div>
+        </div>
+
     </div>
 </div>
 
+<!-- 🔥 FIREBASE SCRIPT -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 
@@ -32,22 +98,19 @@ import {
     getDoc 
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-// SAME CONFIG
+// 🔑 SAME CONFIG
 const firebaseConfig = {
-    apiKey: "AIzaSyA4vB_-McxIOWCc_8fN0GNTqGveH7LvqOk",
-    authDomain: "github-project-data.firebaseapp.com",
-    projectId: "github-project-data",
-    storageBucket: "github-project-data.firebasestorage.app",
-    messagingSenderId: "876177602744",
-    appId: "1:876177602744:web:98e7f4fc0ba87369a45c4d",
-    measurementId: "G-C98J8JYSZM"
-  };
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    appId: "YOUR_APP_ID"
+};
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// Protect + load user
+// Protect page + load username
 onAuthStateChanged(auth, async (user) => {
     if (!user) {
         window.location.href = "index.html";
@@ -62,7 +125,7 @@ onAuthStateChanged(auth, async (user) => {
         }
 
         document.getElementById("welcome-text").textContent =
-            "USER AUTHENTICATED: " + username;
+            "WELCOME, " + username;
     }
 });
 
@@ -71,6 +134,11 @@ document.getElementById("logout-btn").addEventListener("click", () => {
     signOut(auth).then(() => {
         window.location.href = "index.html";
     });
+});
+
+// Placeholder button action
+document.getElementById("new-project-btn").addEventListener("click", () => {
+    alert("NEW PROJECT FLOW COMING SOON");
 });
 </script>
 
