@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tron Login</title>
+    <title>Login</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -16,7 +16,7 @@
         <form id="login-form">
             <div class="input-group">
                 <input type="text" required>
-                <label>Username</label>
+                <label>Email</label>
             </div>
 
             <div class="input-group">
@@ -56,6 +56,8 @@
                 <span onclick="toggleForm()">Login</span>
             </p>
         </form>
+
+        <div id="status-message"></div>
     </div>
 </div>
 
@@ -71,40 +73,54 @@ function toggleForm() {
     title.textContent = login.classList.contains("hidden") ? "Register" : "Login";
 }
 </script>
-    
-<script>
-let users = [];
 
-// Load users from JSON + localStorage
-async function loadUsers() {
-    const response = await fetch('users.json');
-    const data = await response.json();
+<!-- 🔥 FIREBASE SCRIPT (ALL IN ONE PLACE) -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 
-    const localUsers = JSON.parse(localStorage.getItem("users")) || [];
+import { 
+    getAuth, 
+    createUserWithEmailAndPassword, 
+    signInWithEmailAndPassword 
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
-    users = [...data, ...localUsers];
-}
+import { 
+    getFirestore, 
+    doc, 
+    setDoc 
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-loadUsers();
+// 🔑 PASTE YOUR CONFIG HERE
+const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    appId: "YOUR_APP_ID"
+};
+
+// Initialize
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
 // LOGIN
 document.getElementById("login-form").addEventListener("submit", function(e) {
     e.preventDefault();
 
-    const username = this.querySelector("input[type='text']").value;
+    const email = this.querySelector("input[type='text']").value;
     const password = this.querySelector("input[type='password']").value;
 
-    const found = users.find(u => u.username === username && u.password === password);
-
-    if (found) {
-        alert("ACCESS GRANTED");
-    } else {
-        alert("ACCESS DENIED");
-    }
+    signInWithEmailAndPassword(auth, email, password)
+        .then(() => {
+            window.location.href = "dashboard.html";
+        })
+        .catch(() => {
+            showMessage("ACCESS DENIED", false);
+        });
 });
 
 // REGISTER
-document.getElementById("register-form").addEventListener("submit", function(e) {
+document.getElementById("register-form").addEventListener("submit", async function(e) {
     e.preventDefault();
 
     const inputs = this.querySelectorAll("input");
@@ -112,51 +128,29 @@ document.getElementById("register-form").addEventListener("submit", function(e) 
     const email = inputs[1].value;
     const password = inputs[2].value;
 
-    const exists = users.find(u => u.username === username);
+    try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
 
-    if (exists) {
-        alert("USER ALREADY EXISTS");
-        return;
+        await setDoc(doc(db, "users", user.uid), {
+            username: username,
+            email: email
+        });
+
+        showMessage("USER CREATED", true);
+
+    } catch (err) {
+        showMessage(err.message, false);
     }
-
-    const newUser = { username, password };
-
-    // Save to localStorage (since we can't write to JSON)
-    const localUsers = JSON.parse(localStorage.getItem("users")) || [];
-    localUsers.push(newUser);
-    localStorage.setItem("users", JSON.stringify(localUsers));
-
-    alert("USER REGISTERED (LOCAL)");
-    location.reload();
 });
+
+// UI MESSAGE
+function showMessage(msg, success) {
+    const el = document.getElementById("status-message");
+    el.textContent = msg;
+    el.style.color = success ? "#00ff99" : "#ff0033";
+}
 </script>
 
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } 
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-
-  const firebaseConfig = {
-    apiKey: "YOUR_KEY",
-    authDomain: "YOUR_PROJECT.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-</script>
-
-<script>
-    const firebaseConfig = {
-    apiKey: "AIzaSyA4vB_-McxIOWCc_8fN0GNTqGveH7LvqOk",
-    authDomain: "github-project-data.firebaseapp.com",
-    projectId: "github-project-data",
-    storageBucket: "github-project-data.firebasestorage.app",
-    messagingSenderId: "876177602744",
-    appId: "1:876177602744:web:98e7f4fc0ba87369a45c4d",
-    measurementId: "G-C98J8JYSZM"
-  };
-</script>
-    
 </body>
 </html>
