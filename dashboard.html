@@ -120,7 +120,7 @@ onAuthStateChanged(auth, (user) => {
 
         const docRef = await addDoc(collection(db, "projects"), {
             name: "New Project",
-            owner: user.uid,
+            owner: user.username,
             collaborators: [user.uid],
             createdAt: new Date()
         });
