@@ -50,6 +50,7 @@
 
 </div>
 
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 
@@ -65,7 +66,7 @@ import {
     addDoc 
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-// 🔑 CONFIG
+// CONFIG
 const firebaseConfig = {
     apiKey: "AIzaSyA4vB_-McxIOWCc_8fN0GNTqGveH7LvqOk",
     authDomain: "github-project-data.firebaseapp.com",
@@ -80,38 +81,44 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// Protect page + show user
+console.log("Script loaded");
+
+// 🔑 WAIT FOR AUTH
 onAuthStateChanged(auth, (user) => {
+    console.log("Auth state:", user);
+
     if (!user) {
         window.location.href = "index.html";
-    } else {
-        document.getElementById("welcome-text").textContent =
-            "WELCOME, " + user.email;
+        return;
     }
-});
 
-// 🔥 CREATE PROJECT
-document.getElementById("new-project-btn").addEventListener("click", async () => {
-    const user = auth.currentUser;
+    // Show user
+    document.getElementById("welcome-text").textContent =
+        "WELCOME, " + user.email;
 
-    if (!user) return;
+    // ✅ NOW attach button handlers (AFTER user exists)
 
-    const docRef = await addDoc(collection(db, "projects"), {
-        name: "New Project",
-        owner: user.uid,
-        collaborators: [user.uid],
-        createdAt: new Date()
+    document.getElementById("new-project-btn").addEventListener("click", async () => {
+        console.log("New project clicked");
+
+        const docRef = await addDoc(collection(db, "projects"), {
+            name: "New Project",
+            owner: user.uid,
+            collaborators: [user.uid],
+            createdAt: new Date()
+        });
+
+        window.location.href = `project.html?id=${docRef.id}`;
     });
 
-    // 👉 Redirect with project ID
-    window.location.href = `project.html?id=${docRef.id}`;
-});
+    document.getElementById("logout-btn").addEventListener("click", () => {
+        console.log("Logout clicked");
 
-// Logout
-document.getElementById("logout-btn").addEventListener("click", () => {
-    signOut(auth).then(() => {
-        window.location.href = "index.html";
+        signOut(auth).then(() => {
+            window.location.href = "index.html";
+        });
     });
+
 });
 </script>
 
