@@ -1,88 +1,55 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard</title>
-    <link rel="stylesheet" href="styles.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard</title>
+<link rel="stylesheet" href="styles.css">
 
-    <style>
-        /* Layout */
-        .dashboard-container {
-            display: flex;
-            height: 100vh;
-        }
+<style>
+.dashboard-container {
+    display: flex;
+    height: 100vh;
+}
 
-        /* Sidebar */
-        .sidebar {
-            width: 200px;
-            padding: 20px;
-            border-right: 1px solid #00ff99;
-        }
+.sidebar {
+    width: 200px;
+    padding: 20px;
+    border-right: 1px solid #00ff99;
+}
 
-        .sidebar button {
-            width: 100%;
-            margin-bottom: 20px;
-        }
+.main-content {
+    flex: 1;
+    padding: 20px;
+}
 
-        /* Main content */
-        .main-content {
-            flex: 1;
-            padding: 20px;
-        }
-
-        /* Header */
-        .dashboard-header {
-            margin-bottom: 20px;
-            border-bottom: 1px solid #00ff99;
-            padding-bottom: 10px;
-        }
-
-        /* Section */
-        .projects-section h3 {
-            margin-bottom: 15px;
-        }
-
-        /* Project card */
-        .project-card {
-            border: 1px solid #00ff99;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 0 10px #00ff99;
-        }
-    </style>
+.project-card {
+    border: 1px solid #00ff99;
+    padding: 20px;
+    margin-top: 10px;
+}
+</style>
 </head>
 <body>
 
 <div class="dashboard-container">
 
-    <!-- LEFT SIDEBAR -->
     <div class="sidebar">
         <button id="new-project-btn">+ New Project</button>
         <button id="logout-btn">Logout</button>
     </div>
 
-    <!-- MAIN AREA -->
     <div class="main-content">
+        <h2 id="welcome-text">Loading...</h2>
 
-        <!-- HEADER -->
-        <div class="dashboard-header">
-            <h2 id="welcome-text">Loading...</h2>
+        <h3>Previous Projects</h3>
+        <div class="project-card">
+            No previous projects. Start your first one?
         </div>
-
-        <!-- PROJECTS SECTION -->
-        <div class="projects-section">
-            <h3>Previous Projects</h3>
-
-            <div class="project-card">
-                <p>No previous projects. Start your first one?</p>
-            </div>
-        </div>
-
     </div>
+
 </div>
 
-<!-- 🔥 FIREBASE SCRIPT -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 
@@ -94,42 +61,47 @@ import {
 
 import { 
     getFirestore, 
-    doc, 
-    getDoc 
+    collection, 
+    addDoc 
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-// 🔑 SAME CONFIG
+// 🔑 CONFIG
 const firebaseConfig = {
-    apiKey: "AIzaSyA4vB_-McxIOWCc_8fN0GNTqGveH7LvqOk",
-    authDomain: "github-project-data.firebaseapp.com",
-    projectId: "github-project-data",
-    storageBucket: "github-project-data.firebasestorage.app",
-    messagingSenderId: "876177602744",
-    appId: "1:876177602744:web:98e7f4fc0ba87369a45c4d",
-    measurementId: "G-C98J8JYSZM"
-  };
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    appId: "YOUR_APP_ID"
+};
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// Protect page + load username
-onAuthStateChanged(auth, async (user) => {
+// Protect page + show user
+onAuthStateChanged(auth, (user) => {
     if (!user) {
         window.location.href = "index.html";
     } else {
-        const docRef = doc(db, "users", user.uid);
-        const docSnap = await getDoc(docRef);
-
-        let username = "UNKNOWN_USER";
-
-        if (docSnap.exists()) {
-            username = docSnap.data().username;
-        }
-
         document.getElementById("welcome-text").textContent =
-            "WELCOME, " + username;
+            "WELCOME, " + user.email;
     }
+});
+
+// 🔥 CREATE PROJECT
+document.getElementById("new-project-btn").addEventListener("click", async () => {
+    const user = auth.currentUser;
+
+    if (!user) return;
+
+    const docRef = await addDoc(collection(db, "projects"), {
+        name: "New Project",
+        owner: user.uid,
+        collaborators: [user.uid],
+        createdAt: new Date()
+    });
+
+    // 👉 Redirect with project ID
+    window.location.href = `project.html?id=${docRef.id}`;
 });
 
 // Logout
@@ -137,11 +109,6 @@ document.getElementById("logout-btn").addEventListener("click", () => {
     signOut(auth).then(() => {
         window.location.href = "index.html";
     });
-});
-
-// Placeholder button action
-document.getElementById("new-project-btn").addEventListener("click", () => {
-    alert("NEW PROJECT FLOW COMING SOON");
 });
 </script>
 
