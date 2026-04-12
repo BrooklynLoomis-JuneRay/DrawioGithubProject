@@ -111,7 +111,7 @@ onAuthStateChanged(auth, (user) => {
 
     // Show user
     document.getElementById("welcome-text").textContent =
-        "WELCOME, " + user.username;
+        "WELCOME, " + user.email;
 
     // ✅ NOW attach button handlers (AFTER user exists)
 
