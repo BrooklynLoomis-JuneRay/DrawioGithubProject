@@ -111,7 +111,7 @@ onAuthStateChanged(auth, (user) => {
 
     // Show user
     document.getElementById("welcome-text").textContent =
-        "WELCOME, " + user.uid;
+        "WELCOME, " + user.username;
 
     // ✅ NOW attach button handlers (AFTER user exists)
 
@@ -120,7 +120,7 @@ onAuthStateChanged(auth, (user) => {
 
         const docRef = await addDoc(collection(db, "projects"), {
             name: "New Project",
-            owner: user.username,
+            owner: user.uid,
             collaborators: [user.uid],
             createdAt: new Date()
         });
