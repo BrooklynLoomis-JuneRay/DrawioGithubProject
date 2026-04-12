@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project</title>
+
+<style>
+body {
+    margin: 0;
+    background: black;
+    color: #00ff99;
+}
+
+.toolbar {
+    padding: 10px;
+    border-bottom: 1px solid #00ff99;
+}
+
+.canvas {
+    position: relative;
+    height: calc(100vh - 50px);
+}
+
+.shape {
+    position: absolute;
+    border: 1px solid #00ff99;
+}
+
+.circle {
+    border-radius: 50%;
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+    <button id="add-square">Square</button>
+    <button id="add-circle">Circle</button>
+</div>
+
+<div id="canvas" class="canvas"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+
+import { getAuth, onAuthStateChanged } 
+from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+import { 
+    getFirestore, 
+    collection, 
+    addDoc,
+    onSnapshot 
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+// CONFIG
+const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    appId: "YOUR_APP_ID"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+// 🔑 Get project ID from URL
+const params = new URLSearchParams(window.location.search);
+const projectId = params.get("id");
+
+// Protect page
+onAuthStateChanged(auth, (user) => {
+    if (!user) {
+        window.location.href = "index.html";
+    }
+});
+
+// Reference elements
+const elementsRef = collection(db, "projects", projectId, "elements");
+
+// Real-time listener
+onSnapshot(elementsRef, (snapshot) => {
+    const canvas = document.getElementById("canvas");
+    canvas.innerHTML = "";
+
+    snapshot.forEach(doc => {
+        const el = doc.data();
+        renderElement(el);
+    });
+});
+
+// Render shape
+function renderElement(el) {
+    const div = document.createElement("div");
+    div.classList.add("shape");
+
+    if (el.type === "circle") div.classList.add("circle");
+
+    div.style.left = el.x + "px";
+    div.style.top = el.y + "px";
+    div.style.width = el.width + "px";
+    div.style.height = el.height + "px";
+
+    document.getElementById("canvas").appendChild(div);
+}
+
+// Add square
+document.getElementById("add-square").onclick = () => {
+    addDoc(elementsRef, {
+        type: "square",
+        x: 50,
+        y: 50,
+        width: 50,
+        height: 50
+    });
+};
+
+// Add circle
+document.getElementById("add-circle").onclick = () => {
+    addDoc(elementsRef, {
+        type: "circle",
+        x: 100,
+        y: 100,
+        width: 50,
+        height: 50
+    });
+};
+</script>
+
+</body>
+</html>
