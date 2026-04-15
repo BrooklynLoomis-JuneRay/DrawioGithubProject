@@ -74,4 +74,19 @@ body {
 /* Hidden form */
 .hidden {
     display: none;
+}/* Toggle text */
+.toggle-text {
+    margin-top: 15px;
+    font-size: 14px;
+}
+
+.toggle-text span {
+    color: #00ffcc;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+/* Hidden form */
+.hidden {
+    display: none;
 }
