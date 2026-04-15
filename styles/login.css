@@ -1,7 +1,16 @@
+/* Center the login page properly */
 body {
     display: flex;
     justify-content: center;
     align-items: center;
+
+    height: 100vh; /* ✅ ensures full screen */
+}
+
+/* Container */
+.container {
+    position: relative;
+    z-index: 1;
 }
 
 /* Form container */
@@ -30,16 +39,39 @@ body {
     outline: none;
 }
 
+/* 🔥 FIXED LABELS */
 .input-group label {
     position: absolute;
     top: 50%;
     left: 10px;
     transform: translateY(-50%);
+    color: #00ff99;          /* ✅ makes it visible correctly */
+    pointer-events: none;    /* ✅ prevents overlap issues */
     transition: 0.3s;
 }
 
+/* Floating labels */
 .input-group input:focus + label,
 .input-group input:valid + label {
     top: -10px;
     font-size: 12px;
+    background: #001a00;     /* ✅ prevents text overlap */
+    padding: 0 5px;
+}
+
+/* Toggle text */
+.toggle-text {
+    margin-top: 15px;
+    font-size: 14px;
+}
+
+.toggle-text span {
+    color: #00ffcc;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+/* Hidden form */
+.hidden {
+    display: none;
 }
