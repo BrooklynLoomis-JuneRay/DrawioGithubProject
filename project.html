@@ -130,7 +130,9 @@ function makeDraggable(el, id) {
 
     el.addEventListener("mousedown", (e) => {
         if (e.target.classList.contains("resize-handle")) return;
-
+        
+        el.isDragging = true;
+        
         offsetX = e.offsetX;
         offsetY = e.offsetY;
 
@@ -153,7 +155,7 @@ function makeDraggable(el, id) {
         function stop() {
             document.removeEventListener("mousemove", move);
             document.removeEventListener("mouseup", stop);
-
+            el.isDragging = false;
             // Final accurate update
             updateElement(id, el);
         }
@@ -162,6 +164,7 @@ function makeDraggable(el, id) {
         document.addEventListener("mouseup", stop);
     });
 }
+    
 
 async function updateElementLive(id, x, y, el) {
     const projectId = new URLSearchParams(window.location.search).get("id");
@@ -224,6 +227,19 @@ function makeResizable(el, id) {
             document.addEventListener("mouseup", stop);
         });
     });
+}
+
+function updateElementOnScreen(data) {
+    const el = document.querySelector(`[data-id="${data.id}"]`);
+    if (!el) return;
+
+    // 🔥 Don't fight the user's drag
+    if (el.isDragging) return;
+
+    el.style.left = data.x + "px";
+    el.style.top = data.y + "px";
+    el.style.width = data.width + "px";
+    el.style.height = data.height + "px";
 }
 
 // Add square
