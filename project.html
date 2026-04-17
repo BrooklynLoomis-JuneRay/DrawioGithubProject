@@ -159,6 +159,17 @@ function makeDraggable(el, id) {
     });
 }
 
+async function updateElementLive(id, x, y, el) {
+    const projectId = new URLSearchParams(window.location.search).get("id");
+
+    const ref = doc(db, "projects", projectId, "elements", id);
+
+    await updateDoc(ref, {
+        x: x,
+        y: y
+    });
+}
+
 function makeResizable(el, id) {
     const positions = ["top-left", "top-right", "bottom-left", "bottom-right"];
 
