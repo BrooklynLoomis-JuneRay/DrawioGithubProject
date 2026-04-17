@@ -45,9 +45,13 @@ import {
     getFirestore, 
     collection, 
     addDoc, 
+    doc,
+    updateDoc,
+    deleteDoc,
     query, 
     where, 
-    onSnapshot 
+    onSnapshot,
+    arrayRemove
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { 
     getAuth, 
@@ -87,25 +91,24 @@ onAuthStateChanged(auth, (user) => {
         if (snapshot.empty) {
             list.innerHTML = '<div class="project-card">No projects found. Create one!</div>';
         } else {
-            snapshot.forEach(doc => {
-                const data = doc.data();
-                const card = createProjectCard(doc.id, data.name || "Untitled Project");
+            snapshot.forEach(pDoc => {
+                const data = pDoc.data();
+                const card = createProjectCard(pDoc.id, data.name || "Untitled Project", true, user.uid);
                 list.appendChild(card);
             });
         }
     });
 
-    // Load Shared Projects (where I am a collaborator but NOT the owner)
-    // Note: In a simple setup, we check if user.uid is in collaborators array
+    // Load Shared Projects
     const sharedProjectsQuery = query(collection(db, "projects"), where("collaborators", "array-contains", user.uid));
     onSnapshot(sharedProjectsQuery, (snapshot) => {
         const list = document.getElementById("shared-projects-list");
         list.innerHTML = "";
         let count = 0;
-        snapshot.forEach(doc => {
-            const data = doc.data();
+        snapshot.forEach(pDoc => {
+            const data = pDoc.data();
             if (data.owner !== user.uid) {
-                const card = createProjectCard(doc.id, data.name || "Shared Project");
+                const card = createProjectCard(pDoc.id, data.name || "Shared Project", false, user.uid);
                 list.appendChild(card);
                 count++;
             }
@@ -136,13 +139,63 @@ onAuthStateChanged(auth, (user) => {
     };
 });
 
-function createProjectCard(id, name) {
+function createProjectCard(id, name, isOwner, userId) {
     const div = document.createElement("div");
     div.className = "project-card";
-    div.textContent = name;
+    
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = name;
+    div.appendChild(nameSpan);
+
+    const actions = document.createElement("div");
+    actions.className = "project-actions";
+
+    if (isOwner) {
+        const renameBtn = document.createElement("button");
+        renameBtn.textContent = "Rename";
+        renameBtn.onclick = async (e) => {
+            e.stopPropagation();
+            const newName = prompt("New project name:", name);
+            if (newName && newName !== name) {
+                await updateDoc(doc(db, "projects", id), { name: newName });
+            }
+        };
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.textContent = "Delete";
+        deleteBtn.style.borderColor = "#ff0033";
+        deleteBtn.style.color = "#ff0033";
+        deleteBtn.onclick = async (e) => {
+            e.stopPropagation();
+            if (confirm("Delete this project? This cannot be undone.")) {
+                await deleteDoc(doc(db, "projects", id));
+            }
+        };
+
+        actions.appendChild(renameBtn);
+        actions.appendChild(deleteBtn);
+    } else {
+        const leaveBtn = document.createElement("button");
+        leaveBtn.textContent = "Leave";
+        leaveBtn.style.borderColor = "#ff9900";
+        leaveBtn.style.color = "#ff9900";
+        leaveBtn.onclick = async (e) => {
+            e.stopPropagation();
+            if (confirm("Leave this project?")) {
+                await updateDoc(doc(db, "projects", id), {
+                    collaborators: arrayRemove(userId)
+                });
+            }
+        };
+        actions.appendChild(leaveBtn);
+    }
+
+    div.appendChild(actions);
+
     div.onclick = () => {
         window.location.href = `project.html?id=${id}`;
     };
+    
     return div;
 }
 </script>

@@ -19,6 +19,29 @@
 
 <div id="canvas" class="canvas"></div>
 
+<!-- Edit Sidebar -->
+<div id="edit-sidebar" class="edit-sidebar">
+    <h3>Edit Object</h3>
+    <div class="edit-group">
+        <label>X Position</label>
+        <input type="number" id="edit-x">
+    </div>
+    <div class="edit-group">
+        <label>Y Position</label>
+        <input type="number" id="edit-y">
+    </div>
+    <div class="edit-group">
+        <label>Width</label>
+        <input type="number" id="edit-width">
+    </div>
+    <div class="edit-group">
+        <label>Height</label>
+        <input type="number" id="edit-height">
+    </div>
+    <button id="delete-object-btn" style="margin-top: 10px; border-color: #ff0033; color: #ff0033;">Delete Object</button>
+    <button id="close-sidebar-btn" style="margin-top: auto;">Close</button>
+</div>
+
 <!-- Collaborate Modal -->
 <div id="collaborate-modal" class="modal">
     <div class="modal-content">
@@ -40,7 +63,9 @@ import {
     collection, 
     addDoc,
     doc,
+    getDoc,
     updateDoc,
+    deleteDoc,
     onSnapshot,
     getDocs,
     query,
@@ -71,6 +96,8 @@ if (!projectId) {
     window.location.href = "dashboard.html";
 }
 
+let selectedElementId = null;
+
 // Protect page
 onAuthStateChanged(auth, (user) => {
     if (!user) {
@@ -86,22 +113,22 @@ const UPDATE_INTERVAL = 100; // ms (10 updates/sec)
     
 // Real-time listener for elements
 onSnapshot(elementsRef, (snapshot) => {
-    const canvas = document.getElementById("canvas");
-    // We only want to add new ones or update existing ones, but for simplicity:
-    // snapshot.docChanges() would be better, but let's keep the innerHTML reset for now
-    // as it was in the original code, but I'll optimize slightly.
-    
-    // To prevent flickering and lost focus, we should only update elements that changed.
     snapshot.docChanges().forEach(change => {
         if (change.type === "added") {
             createElement(change.doc.id, change.doc.data());
         }
         if (change.type === "modified") {
             updateElementOnScreen(change.doc.id, change.doc.data());
+            if (selectedElementId === change.doc.id) {
+                updateSidebarInputs(change.doc.data());
+            }
         }
         if (change.type === "removed") {
             const el = document.querySelector(`[data-id="${change.doc.id}"]`);
             if (el) el.remove();
+            if (selectedElementId === change.doc.id) {
+                closeSidebar();
+            }
         }
     });
 });
@@ -126,6 +153,12 @@ function createElement(id, data) {
 
     makeDraggable(el, id);
     makeResizable(el, id);
+    
+    el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openSidebar(id, data);
+    });
+
     el.isDragging = false;
 }
 
@@ -233,6 +266,59 @@ function makeResizable(el, id) {
     });
 }
 
+// Sidebar Logic
+const sidebar = document.getElementById("edit-sidebar");
+const editX = document.getElementById("edit-x");
+const editY = document.getElementById("edit-y");
+const editWidth = document.getElementById("edit-width");
+const editHeight = document.getElementById("edit-height");
+
+function openSidebar(id, data) {
+    selectedElementId = id;
+    sidebar.classList.add("open");
+    updateSidebarInputs(data);
+}
+
+function updateSidebarInputs(data) {
+    editX.value = data.x;
+    editY.value = data.y;
+    editWidth.value = data.width;
+    editHeight.value = data.height;
+}
+
+function closeSidebar() {
+    selectedElementId = null;
+    sidebar.classList.remove("open");
+}
+
+document.getElementById("close-sidebar-btn").onclick = closeSidebar;
+
+[editX, editY, editWidth, editHeight].forEach(input => {
+    input.onchange = async () => {
+        if (!selectedElementId) return;
+        const ref = doc(db, "projects", projectId, "elements", selectedElementId);
+        await updateDoc(ref, {
+            x: parseInt(editX.value),
+            y: parseInt(editY.value),
+            width: parseInt(editWidth.value),
+            height: parseInt(editHeight.value)
+        });
+    };
+});
+
+document.getElementById("delete-object-btn").onclick = async () => {
+    if (!selectedElementId) return;
+    if (confirm("Delete this object?")) {
+        const ref = doc(db, "projects", projectId, "elements", selectedElementId);
+        await deleteDoc(ref);
+        closeSidebar();
+    }
+};
+
+document.getElementById("canvas").onclick = () => {
+    closeSidebar();
+};
+
 // Toolbar actions
 document.getElementById("add-square").onclick = () => {
     addDoc(elementsRef, { type: "square", x: 50, y: 50, width: 50, height: 50 });
@@ -268,6 +354,11 @@ userSearch.oninput = (e) => {
 
 async function loadUsers(searchText) {
     userList.innerHTML = "Searching...";
+    
+    // Get current project collaborators to check "Added" state
+    const projectSnap = await getDoc(doc(db, "projects", projectId));
+    const collaborators = projectSnap.data().collaborators || [];
+
     const usersQuery = query(collection(db, "users"));
     const snapshot = await getDocs(usersQuery);
     
@@ -275,27 +366,34 @@ async function loadUsers(searchText) {
     snapshot.forEach(uDoc => {
         const userData = uDoc.data();
         if (userData.email.toLowerCase().includes(searchText.toLowerCase())) {
+            const isCollaborator = collaborators.includes(uDoc.id);
             const div = document.createElement("div");
             div.className = "user-item";
             div.innerHTML = `
                 <span>${userData.email}</span>
-                <button data-uid="${uDoc.id}">Add</button>
+                <button data-uid="${uDoc.id}" ${isCollaborator ? 'disabled class="added"' : ''}>
+                    ${isCollaborator ? 'Added' : 'Add'}
+                </button>
             `;
             const btn = div.querySelector("button");
-            btn.onclick = async () => {
-                await addCollaborator(uDoc.id, userData.email);
-            };
+            if (!isCollaborator) {
+                btn.onclick = async () => {
+                    await addCollaborator(uDoc.id, userData.email, btn);
+                };
+            }
             userList.appendChild(div);
         }
     });
 }
 
-async function addCollaborator(userId, userEmail) {
+async function addCollaborator(userId, userEmail, btn) {
     const projectRef = doc(db, "projects", projectId);
     await updateDoc(projectRef, {
         collaborators: arrayUnion(userId)
     });
-    alert(`${userEmail} added as collaborator!`);
+    btn.textContent = "Added";
+    btn.disabled = true;
+    btn.classList.add("added");
 }
 
 window.onclick = (event) => {

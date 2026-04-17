@@ -43,9 +43,23 @@
     margin-top: 10px;
     cursor: pointer;
     transition: 0.3s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .project-card:hover {
     background: rgba(0, 255, 153, 0.1);
     box-shadow: 0 0 10px #00ff99;
+}
+
+.project-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.project-actions button {
+    width: auto;
+    padding: 5px 10px;
+    font-size: 11px;
 }
