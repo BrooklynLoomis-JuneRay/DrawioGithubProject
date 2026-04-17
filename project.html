@@ -89,24 +89,112 @@ onSnapshot(elementsRef, (snapshot) => {
     canvas.innerHTML = "";
 
     snapshot.forEach(doc => {
-        const el = doc.data();
-        renderElement(el);
+        const data = doc.data();
+
+        // 🔥 attach the Firestore ID
+        data.id = doc.id;
+
+        createElement(data); // ✅ use the interactive version
     });
 });
+function createElement(data) {
+    const el = document.createElement("div");
 
-// Render shape
-function renderElement(el) {
-    const div = document.createElement("div");
-    div.classList.add("shape");
+    el.classList.add("canvas-element");
+    el.dataset.id = data.id;
 
-    if (el.type === "circle") div.classList.add("circle");
+    el.style.left = data.x + "px";
+    el.style.top = data.y + "px";
+    el.style.width = data.width + "px";
+    el.style.height = data.height + "px";
 
-    div.style.left = el.x + "px";
-    div.style.top = el.y + "px";
-    div.style.width = el.width + "px";
-    div.style.height = el.height + "px";
+    if (data.type === "circle") {
+        el.style.borderRadius = "50%";
+    }
 
-    document.getElementById("canvas").appendChild(div);
+    document.getElementById("canvas").appendChild(el);
+
+    makeDraggable(el, data.id);
+    makeResizable(el, data.id);
+}
+
+function makeDraggable(el, id) {
+    let offsetX, offsetY;
+
+    el.addEventListener("mousedown", (e) => {
+        // ❗ Prevent dragging when resizing
+        if (e.target.classList.contains("resize-handle")) return;
+
+        offsetX = e.offsetX;
+        offsetY = e.offsetY;
+
+        function move(e) {
+            el.style.left = (e.pageX - offsetX) + "px";
+            el.style.top = (e.pageY - offsetY) + "px";
+        }
+
+        function stop() {
+            document.removeEventListener("mousemove", move);
+            document.removeEventListener("mouseup", stop);
+
+            updateElement(id, el);
+        }
+
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", stop);
+    });
+}
+
+function makeResizable(el, id) {
+    const positions = ["top-left", "top-right", "bottom-left", "bottom-right"];
+
+    positions.forEach(pos => {
+        const handle = document.createElement("div");
+        handle.classList.add("resize-handle", pos);
+        el.appendChild(handle);
+
+        handle.addEventListener("mousedown", (e) => {
+            e.stopPropagation();
+
+            let startX = e.pageX;
+            let startY = e.pageY;
+
+            let startWidth = el.offsetWidth;
+            let startHeight = el.offsetHeight;
+            let startLeft = el.offsetLeft;
+            let startTop = el.offsetTop;
+
+            function resize(e) {
+                let dx = e.pageX - startX;
+                let dy = e.pageY - startY;
+
+                if (pos.includes("right")) {
+                    el.style.width = startWidth + dx + "px";
+                }
+                if (pos.includes("left")) {
+                    el.style.width = startWidth - dx + "px";
+                    el.style.left = startLeft + dx + "px";
+                }
+                if (pos.includes("bottom")) {
+                    el.style.height = startHeight + dy + "px";
+                }
+                if (pos.includes("top")) {
+                    el.style.height = startHeight - dy + "px";
+                    el.style.top = startTop + dy + "px";
+                }
+            }
+
+            function stop() {
+                document.removeEventListener("mousemove", resize);
+                document.removeEventListener("mouseup", stop);
+
+                updateElement(id, el);
+            }
+
+            document.addEventListener("mousemove", resize);
+            document.addEventListener("mouseup", stop);
+        });
+    });
 }
 
 // Add square
@@ -130,6 +218,22 @@ document.getElementById("add-circle").onclick = () => {
         height: 50
     });
 };
+
+import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+async function updateElement(id, el) {
+    const projectId = new URLSearchParams(window.location.search).get("id");
+
+    const ref = doc(db, "projects", projectId, "elements", id);
+
+    await updateDoc(ref, {
+        x: parseInt(el.style.left),
+        y: parseInt(el.style.top),
+        width: el.offsetWidth,
+        height: el.offsetHeight
+    });
+}
+
 </script>
 
 </body>
