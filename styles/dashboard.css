@@ -10,6 +10,11 @@
     border-right: 1px solid #00ff99;
 }
 
+.sidebar button {
+    width: 100%;
+    margin-bottom: 20px;
+}
+
 /* Main content */
 .main-content {
     flex: 1;
@@ -23,9 +28,24 @@
     padding-bottom: 10px;
 }
 
+.projects-section {
+    margin-top: 20px;
+}
+
+.projects-section h3 {
+    margin-bottom: 15px;
+}
+
 /* Project card */
 .project-card {
     border: 1px solid #00ff99;
     padding: 20px;
     margin-top: 10px;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.project-card:hover {
+    background: rgba(0, 255, 153, 0.1);
+    box-shadow: 0 0 10px #00ff99;
 }

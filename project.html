@@ -5,41 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Project</title>
 
-<style>
-body {
-    margin: 0;
-    background: black;
-    color: #00ff99;
-}
-
-.toolbar {
-    padding: 10px;
-    border-bottom: 1px solid #00ff99;
-}
-
-.canvas {
-    position: relative;
-    height: calc(100vh - 50px);
-}
-
-.shape {
-    position: absolute;
-    border: 1px solid #00ff99;
-}
-
-.circle {
-    border-radius: 50%;
-}
-</style>
+<link rel="stylesheet" href="styles/styles.css">
+<link rel="stylesheet" href="styles/project.css">
 </head>
 <body>
 
 <div class="toolbar">
+    <button id="back-btn">Back</button>
     <button id="add-square">Square</button>
     <button id="add-circle">Circle</button>
+    <button id="collaborate-btn">Collaborate</button>
 </div>
 
 <div id="canvas" class="canvas"></div>
+
+<!-- Collaborate Modal -->
+<div id="collaborate-modal" class="modal">
+    <div class="modal-content">
+        <h3>Add Collaborator</h3>
+        <input type="text" id="user-search" class="user-search-input" placeholder="Search by email...">
+        <div id="user-list" class="user-list"></div>
+        <button id="close-modal-btn" style="margin-top: 10px;">Close</button>
+    </div>
+</div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -51,7 +39,13 @@ import {
     getFirestore, 
     collection, 
     addDoc,
-    onSnapshot 
+    doc,
+    updateDoc,
+    onSnapshot,
+    getDocs,
+    query,
+    where,
+    arrayUnion
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // CONFIG
@@ -73,6 +67,10 @@ const auth = getAuth(app);
 const params = new URLSearchParams(window.location.search);
 const projectId = params.get("id");
 
+if (!projectId) {
+    window.location.href = "dashboard.html";
+}
+
 // Protect page
 onAuthStateChanged(auth, (user) => {
     if (!user) {
@@ -86,26 +84,34 @@ const elementsRef = collection(db, "projects", projectId, "elements");
 let lastUpdateTime = 0;
 const UPDATE_INTERVAL = 100; // ms (10 updates/sec)
     
-// Real-time listener
+// Real-time listener for elements
 onSnapshot(elementsRef, (snapshot) => {
     const canvas = document.getElementById("canvas");
-    canvas.innerHTML = "";
-
-    snapshot.forEach(doc => {
-        const data = doc.data();
-
-        // 🔥 attach the Firestore ID
-        data.id = doc.id;
-
-        createElement(data); // ✅ use the interactive version
+    // We only want to add new ones or update existing ones, but for simplicity:
+    // snapshot.docChanges() would be better, but let's keep the innerHTML reset for now
+    // as it was in the original code, but I'll optimize slightly.
+    
+    // To prevent flickering and lost focus, we should only update elements that changed.
+    snapshot.docChanges().forEach(change => {
+        if (change.type === "added") {
+            createElement(change.doc.id, change.doc.data());
+        }
+        if (change.type === "modified") {
+            updateElementOnScreen(change.doc.id, change.doc.data());
+        }
+        if (change.type === "removed") {
+            const el = document.querySelector(`[data-id="${change.doc.id}"]`);
+            if (el) el.remove();
+        }
     });
 });
 
-function createElement(data) {
-    const el = document.createElement("div");
+function createElement(id, data) {
+    if (document.querySelector(`[data-id="${id}"]`)) return;
 
+    const el = document.createElement("div");
     el.classList.add("canvas-element");
-    el.dataset.id = data.id;
+    el.dataset.id = id;
 
     el.style.left = data.x + "px";
     el.style.top = data.y + "px";
@@ -118,11 +124,19 @@ function createElement(data) {
 
     document.getElementById("canvas").appendChild(el);
 
-    makeDraggable(el, data.id);
-    makeResizable(el, data.id);
-
-    // 🔥 Track if THIS user is dragging
+    makeDraggable(el, id);
+    makeResizable(el, id);
     el.isDragging = false;
+}
+
+function updateElementOnScreen(id, data) {
+    const el = document.querySelector(`[data-id="${id}"]`);
+    if (!el || el.isDragging) return;
+
+    el.style.left = data.x + "px";
+    el.style.top = data.y + "px";
+    el.style.width = data.width + "px";
+    el.style.height = data.height + "px";
 }
 
 function makeDraggable(el, id) {
@@ -132,7 +146,6 @@ function makeDraggable(el, id) {
         if (e.target.classList.contains("resize-handle")) return;
         
         el.isDragging = true;
-        
         offsetX = e.offsetX;
         offsetY = e.offsetY;
 
@@ -143,12 +156,10 @@ function makeDraggable(el, id) {
             el.style.left = x + "px";
             el.style.top = y + "px";
 
-            // 🔥 Throttled live update
             const now = Date.now();
             if (now - lastUpdateTime > UPDATE_INTERVAL) {
                 lastUpdateTime = now;
-
-                updateElementLive(id, x, y, el);
+                updateElementLive(id, x, y);
             }
         }
 
@@ -156,30 +167,31 @@ function makeDraggable(el, id) {
             document.removeEventListener("mousemove", move);
             document.removeEventListener("mouseup", stop);
             el.isDragging = false;
-            // Final accurate update
-            updateElement(id, el);
+            updateElementFinal(id, el);
         }
 
         document.addEventListener("mousemove", move);
         document.addEventListener("mouseup", stop);
     });
 }
-    
 
-async function updateElementLive(id, x, y, el) {
-    const projectId = new URLSearchParams(window.location.search).get("id");
-
+async function updateElementLive(id, x, y) {
     const ref = doc(db, "projects", projectId, "elements", id);
+    await updateDoc(ref, { x, y });
+}
 
+async function updateElementFinal(id, el) {
+    const ref = doc(db, "projects", projectId, "elements", id);
     await updateDoc(ref, {
-        x: x,
-        y: y
+        x: parseInt(el.style.left),
+        y: parseInt(el.style.top),
+        width: el.offsetWidth,
+        height: el.offsetHeight
     });
 }
 
 function makeResizable(el, id) {
     const positions = ["top-left", "top-right", "bottom-left", "bottom-right"];
-
     positions.forEach(pos => {
         const handle = document.createElement("div");
         handle.classList.add("resize-handle", pos);
@@ -187,10 +199,8 @@ function makeResizable(el, id) {
 
         handle.addEventListener("mousedown", (e) => {
             e.stopPropagation();
-
             let startX = e.pageX;
             let startY = e.pageY;
-
             let startWidth = el.offsetWidth;
             let startHeight = el.offsetHeight;
             let startLeft = el.offsetLeft;
@@ -200,16 +210,12 @@ function makeResizable(el, id) {
                 let dx = e.pageX - startX;
                 let dy = e.pageY - startY;
 
-                if (pos.includes("right")) {
-                    el.style.width = startWidth + dx + "px";
-                }
+                if (pos.includes("right")) el.style.width = startWidth + dx + "px";
                 if (pos.includes("left")) {
                     el.style.width = startWidth - dx + "px";
                     el.style.left = startLeft + dx + "px";
                 }
-                if (pos.includes("bottom")) {
-                    el.style.height = startHeight + dy + "px";
-                }
+                if (pos.includes("bottom")) el.style.height = startHeight + dy + "px";
                 if (pos.includes("top")) {
                     el.style.height = startHeight - dy + "px";
                     el.style.top = startTop + dy + "px";
@@ -219,65 +225,84 @@ function makeResizable(el, id) {
             function stop() {
                 document.removeEventListener("mousemove", resize);
                 document.removeEventListener("mouseup", stop);
-
-                updateElement(id, el);
+                updateElementFinal(id, el);
             }
-
             document.addEventListener("mousemove", resize);
             document.addEventListener("mouseup", stop);
         });
     });
 }
 
-function updateElementOnScreen(data) {
-    const el = document.querySelector(`[data-id="${data.id}"]`);
-    if (!el) return;
-
-    // 🔥 Don't fight the user's drag
-    if (el.isDragging) return;
-
-    el.style.left = data.x + "px";
-    el.style.top = data.y + "px";
-    el.style.width = data.width + "px";
-    el.style.height = data.height + "px";
-}
-
-// Add square
+// Toolbar actions
 document.getElementById("add-square").onclick = () => {
-    addDoc(elementsRef, {
-        type: "square",
-        x: 50,
-        y: 50,
-        width: 50,
-        height: 50
-    });
+    addDoc(elementsRef, { type: "square", x: 50, y: 50, width: 50, height: 50 });
 };
 
-// Add circle
 document.getElementById("add-circle").onclick = () => {
-    addDoc(elementsRef, {
-        type: "circle",
-        x: 100,
-        y: 100,
-        width: 50,
-        height: 50
-    });
+    addDoc(elementsRef, { type: "circle", x: 100, y: 100, width: 50, height: 50 });
 };
 
-import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+document.getElementById("back-btn").onclick = () => {
+    window.location.href = "dashboard.html";
+};
 
-async function updateElement(id, el) {
-    const projectId = new URLSearchParams(window.location.search).get("id");
+// Collaborate Modal Logic
+const modal = document.getElementById("collaborate-modal");
+const collBtn = document.getElementById("collaborate-btn");
+const closeBtn = document.getElementById("close-modal-btn");
+const userSearch = document.getElementById("user-search");
+const userList = document.getElementById("user-list");
 
-    const ref = doc(db, "projects", projectId, "elements", id);
+collBtn.onclick = () => {
+    modal.style.display = "block";
+    loadUsers("");
+};
 
-    await updateDoc(ref, {
-        x: parseInt(el.style.left),
-        y: parseInt(el.style.top),
-        width: el.offsetWidth,
-        height: el.offsetHeight
+closeBtn.onclick = () => {
+    modal.style.display = "none";
+};
+
+userSearch.oninput = (e) => {
+    loadUsers(e.target.value);
+};
+
+async function loadUsers(searchText) {
+    userList.innerHTML = "Searching...";
+    const usersQuery = query(collection(db, "users"));
+    const snapshot = await getDocs(usersQuery);
+    
+    userList.innerHTML = "";
+    snapshot.forEach(uDoc => {
+        const userData = uDoc.data();
+        if (userData.email.toLowerCase().includes(searchText.toLowerCase())) {
+            const div = document.createElement("div");
+            div.className = "user-item";
+            div.innerHTML = `
+                <span>${userData.email}</span>
+                <button data-uid="${uDoc.id}">Add</button>
+            `;
+            const btn = div.querySelector("button");
+            btn.onclick = async () => {
+                await addCollaborator(uDoc.id, userData.email);
+            };
+            userList.appendChild(div);
+        }
     });
 }
+
+async function addCollaborator(userId, userEmail) {
+    const projectRef = doc(db, "projects", projectId);
+    await updateDoc(projectRef, {
+        collaborators: arrayUnion(userId)
+    });
+    alert(`${userEmail} added as collaborator!`);
+}
+
+window.onclick = (event) => {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+};
 
 </script>
 

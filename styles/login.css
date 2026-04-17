@@ -3,8 +3,7 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-
-    height: 100vh; /* ✅ ensures full screen */
+    height: 100vh;
 }
 
 /* Container */
@@ -39,14 +38,14 @@ body {
     outline: none;
 }
 
-/* 🔥 FIXED LABELS */
+/* FIXED LABELS */
 .input-group label {
     position: absolute;
     top: 50%;
     left: 10px;
     transform: translateY(-50%);
-    color: #00ff99;          /* ✅ makes it visible correctly */
-    pointer-events: none;    /* ✅ prevents overlap issues */
+    color: #00ff99;
+    pointer-events: none;
     transition: 0.3s;
 }
 
@@ -55,26 +54,11 @@ body {
 .input-group input:valid + label {
     top: -10px;
     font-size: 12px;
-    background: #001a00;     /* ✅ prevents text overlap */
+    background: #001a00;
     padding: 0 5px;
 }
 
 /* Toggle text */
-.toggle-text {
-    margin-top: 15px;
-    font-size: 14px;
-}
-
-.toggle-text span {
-    color: #00ffcc;
-    cursor: pointer;
-    text-decoration: underline;
-}
-
-/* Hidden form */
-.hidden {
-    display: none;
-}/* Toggle text */
 .toggle-text {
     margin-top: 15px;
     font-size: 14px;
