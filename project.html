@@ -100,6 +100,7 @@ onSnapshot(elementsRef, (snapshot) => {
         createElement(data); // ✅ use the interactive version
     });
 });
+
 function createElement(data) {
     const el = document.createElement("div");
 
@@ -119,6 +120,9 @@ function createElement(data) {
 
     makeDraggable(el, data.id);
     makeResizable(el, data.id);
+
+    // 🔥 Track if THIS user is dragging
+    el.isDragging = false;
 }
 
 function makeDraggable(el, id) {
