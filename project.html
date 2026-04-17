@@ -83,6 +83,9 @@ onAuthStateChanged(auth, (user) => {
 // Reference elements
 const elementsRef = collection(db, "projects", projectId, "elements");
 
+let lastUpdateTime = 0;
+const UPDATE_INTERVAL = 100; // ms (10 updates/sec)
+    
 // Real-time listener
 onSnapshot(elementsRef, (snapshot) => {
     const canvas = document.getElementById("canvas");
@@ -122,21 +125,32 @@ function makeDraggable(el, id) {
     let offsetX, offsetY;
 
     el.addEventListener("mousedown", (e) => {
-        // ❗ Prevent dragging when resizing
         if (e.target.classList.contains("resize-handle")) return;
 
         offsetX = e.offsetX;
         offsetY = e.offsetY;
 
         function move(e) {
-            el.style.left = (e.pageX - offsetX) + "px";
-            el.style.top = (e.pageY - offsetY) + "px";
+            const x = e.pageX - offsetX;
+            const y = e.pageY - offsetY;
+
+            el.style.left = x + "px";
+            el.style.top = y + "px";
+
+            // 🔥 Throttled live update
+            const now = Date.now();
+            if (now - lastUpdateTime > UPDATE_INTERVAL) {
+                lastUpdateTime = now;
+
+                updateElementLive(id, x, y, el);
+            }
         }
 
         function stop() {
             document.removeEventListener("mousemove", move);
             document.removeEventListener("mouseup", stop);
 
+            // Final accurate update
             updateElement(id, el);
         }
 
