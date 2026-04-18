@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Project</title>
 
 <link rel="stylesheet" href="styles/styles.css">
@@ -101,6 +101,14 @@ if (!projectId) {
 let selectedElementId = null;
 let currentUser = null;
 
+// Helper to get coordinates for both Mouse and Touch
+function getCoords(e) {
+    if (e.touches && e.touches.length > 0) {
+        return { x: e.touches[0].pageX, y: e.touches[0].pageY };
+    }
+    return { x: e.pageX, y: e.pageY };
+}
+
 // Protect page
 onAuthStateChanged(auth, (user) => {
     if (!user) {
@@ -114,8 +122,9 @@ onAuthStateChanged(auth, (user) => {
 // Reference elements
 const elementsRef = collection(db, "projects", projectId, "elements");
 
-let lastUpdateTime = 0;
-const UPDATE_INTERVAL = 100; // ms (10 updates/sec)
+let lastElementUpdateTime = 0;
+let lastCursorUpdateTime = 0;
+const UPDATE_INTERVAL = 100; // ms
     
 // Real-time listener for elements
 onSnapshot(elementsRef, (snapshot) => {
@@ -160,10 +169,11 @@ function createElement(id, data) {
     makeDraggable(el, id);
     makeResizable(el, id);
     
-    el.addEventListener("click", (e) => {
+    const clickHandler = (e) => {
         e.stopPropagation();
         openSidebar(id, data);
-    });
+    };
+    el.addEventListener("click", clickHandler);
 
     el.isDragging = false;
 }
@@ -181,37 +191,47 @@ function updateElementOnScreen(id, data) {
 function makeDraggable(el, id) {
     let offsetX, offsetY;
 
-    el.addEventListener("mousedown", (e) => {
+    const start = (e) => {
         if (e.target.classList.contains("resize-handle")) return;
         
         el.isDragging = true;
-        offsetX = e.offsetX;
-        offsetY = e.offsetY;
+        const coords = getCoords(e);
+        const rect = el.getBoundingClientRect();
+        offsetX = coords.x - rect.left;
+        offsetY = coords.y - rect.top;
 
-        function move(e) {
-            const x = e.pageX - offsetX;
-            const y = e.pageY - offsetY;
+        const move = (e) => {
+            const coords = getCoords(e);
+            const x = coords.x - offsetX;
+            const y = coords.y - offsetY;
 
             el.style.left = x + "px";
             el.style.top = y + "px";
 
             const now = Date.now();
-            if (now - lastUpdateTime > UPDATE_INTERVAL) {
-                lastUpdateTime = now;
+            if (now - lastElementUpdateTime > UPDATE_INTERVAL) {
+                lastElementUpdateTime = now;
                 updateElementLive(id, x, y);
             }
-        }
+        };
 
-        function stop() {
+        const stop = () => {
             document.removeEventListener("mousemove", move);
             document.removeEventListener("mouseup", stop);
+            document.removeEventListener("touchmove", move);
+            document.removeEventListener("touchend", stop);
             el.isDragging = false;
             updateElementFinal(id, el);
-        }
+        };
 
         document.addEventListener("mousemove", move);
         document.addEventListener("mouseup", stop);
-    });
+        document.addEventListener("touchmove", move, { passive: false });
+        document.addEventListener("touchend", stop);
+    };
+
+    el.addEventListener("mousedown", start);
+    el.addEventListener("touchstart", start, { passive: false });
 }
 
 async function updateElementLive(id, x, y) {
@@ -236,18 +256,20 @@ function makeResizable(el, id) {
         handle.classList.add("resize-handle", pos);
         el.appendChild(handle);
 
-        handle.addEventListener("mousedown", (e) => {
+        const start = (e) => {
             e.stopPropagation();
-            let startX = e.pageX;
-            let startY = e.pageY;
+            const startCoords = getCoords(e);
+            let startX = startCoords.x;
+            let startY = startCoords.y;
             let startWidth = el.offsetWidth;
             let startHeight = el.offsetHeight;
             let startLeft = el.offsetLeft;
             let startTop = el.offsetTop;
 
-            function resize(e) {
-                let dx = e.pageX - startX;
-                let dy = e.pageY - startY;
+            const resize = (e) => {
+                const coords = getCoords(e);
+                let dx = coords.x - startX;
+                let dy = coords.y - startY;
 
                 if (pos.includes("right")) el.style.width = startWidth + dx + "px";
                 if (pos.includes("left")) {
@@ -259,16 +281,24 @@ function makeResizable(el, id) {
                     el.style.height = startHeight - dy + "px";
                     el.style.top = startTop + dy + "px";
                 }
-            }
+            };
 
-            function stop() {
+            const stop = () => {
                 document.removeEventListener("mousemove", resize);
                 document.removeEventListener("mouseup", stop);
+                document.removeEventListener("touchmove", resize);
+                document.removeEventListener("touchend", stop);
                 updateElementFinal(id, el);
-            }
+            };
+
             document.addEventListener("mousemove", resize);
             document.addEventListener("mouseup", stop);
-        });
+            document.addEventListener("touchmove", resize, { passive: false });
+            document.addEventListener("touchend", stop);
+        };
+
+        handle.addEventListener("mousedown", start);
+        handle.addEventListener("touchstart", start, { passive: false });
     });
 }
 
@@ -321,32 +351,35 @@ document.getElementById("delete-object-btn").onclick = async () => {
     }
 };
 
-document.getElementById("canvas").onclick = () => {
+document.getElementById("canvas").addEventListener("click", () => {
     closeSidebar();
-};
+});
 
 // --- REAL-TIME PRESENCE (CURSORS) ---
 
 const presenceRef = collection(db, "projects", projectId, "presence");
 
 function initPresence() {
-    // 1. Update MY position
-    document.addEventListener("mousemove", (e) => {
+    const updateMyPosition = (e) => {
         if (!currentUser) return;
         
         const now = Date.now();
-        if (now - lastUpdateTime > 50) { // Update cursor every 50ms
+        if (now - lastCursorUpdateTime > 100) { 
+            lastCursorUpdateTime = now;
+            const coords = getCoords(e);
             const cursorRef = doc(presenceRef, currentUser.uid);
             setDoc(cursorRef, {
-                x: e.pageX,
-                y: e.pageY,
+                x: coords.x,
+                y: coords.y,
                 email: currentUser.email,
                 lastSeen: serverTimestamp()
-            }, { merge: true });
+            }, { merge: true }).catch(err => console.error("Presence error:", err));
         }
-    });
+    };
 
-    // 2. Listen for OTHERS
+    document.addEventListener("mousemove", updateMyPosition);
+    document.addEventListener("touchmove", updateMyPosition, { passive: true });
+
     onSnapshot(presenceRef, (snapshot) => {
         snapshot.docChanges().forEach(change => {
             const id = change.doc.id;
@@ -362,7 +395,6 @@ function initPresence() {
         });
     });
 
-    // 3. Cleanup on leave
     window.addEventListener("beforeunload", () => {
         if (currentUser) {
             deleteDoc(doc(presenceRef, currentUser.uid));
@@ -424,8 +456,6 @@ userSearch.oninput = (e) => {
 
 async function loadUsers(searchText) {
     userList.innerHTML = "Searching...";
-    
-    // Get current project collaborators to check "Added" state
     const projectSnap = await getDoc(doc(db, "projects", projectId));
     const collaborators = projectSnap.data().collaborators || [];
 
