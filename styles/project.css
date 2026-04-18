@@ -94,6 +94,34 @@ body {
     cursor: default;
 }
 
+/* Presence Cursors */
+.remote-cursor {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    pointer-events: none;
+    z-index: 1000;
+    transition: transform 0.1s linear;
+}
+
+.remote-cursor svg {
+    fill: #00ff99;
+    filter: drop-shadow(0 0 5px #00ff99);
+}
+
+.cursor-label {
+    position: absolute;
+    top: 20px;
+    left: 10px;
+    background: #00ff99;
+    color: #000;
+    padding: 2px 6px;
+    font-size: 10px;
+    white-space: nowrap;
+    border-radius: 3px;
+    font-weight: bold;
+}
+
 /* Edit Sidebar */
 .edit-sidebar {
     position: fixed;
