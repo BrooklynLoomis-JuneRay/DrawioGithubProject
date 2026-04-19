@@ -14,10 +14,18 @@
     <button id="back-btn">Back</button>
     <button id="add-square">Square</button>
     <button id="add-circle">Circle</button>
+    <button id="add-text">Text</button>
     <button id="collaborate-btn">Collaborate</button>
+
+    <div class="status-indicator">
+        <div id="status-dot" class="status-dot"></div>
+        <span id="status-text">Online</span>
+    </div>
 </div>
 
 <div id="canvas" class="canvas"></div>
+
+<div id="toast-container"></div>
 
 <!-- Edit Sidebar -->
 <div id="edit-sidebar" class="edit-sidebar">
@@ -37,6 +45,10 @@
     <div class="edit-group">
         <label>Height</label>
         <input type="number" id="edit-height">
+    </div>
+    <div class="edit-group" id="edit-text-group" style="display: none;">
+        <label>Text Content</label>
+        <textarea id="edit-text-content" style="background: transparent; border: 1px solid #00ff99; color: #00ff99; padding: 5px; outline: none; resize: vertical;"></textarea>
     </div>
     <button id="delete-object-btn" style="margin-top: 10px; border-color: #ff0033; color: #ff0033;">Delete Object</button>
     <button id="close-sidebar-btn" style="margin-top: auto;">Close</button>
@@ -72,8 +84,11 @@ import {
     query,
     where,
     arrayUnion,
-    serverTimestamp
+    serverTimestamp,
+    enableIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 // CONFIG
 const firebaseConfig = {
@@ -83,12 +98,23 @@ const firebaseConfig = {
     storageBucket: "github-project-data.firebasestorage.app",
     messagingSenderId: "876177602744",
     appId: "1:876177602744:web:98e7f4fc0ba87369a45c4d",
-    measurementId: "G-C98J8JYSZM"
+    measurementId: "G-C98J8JYSZM",
+    databaseURL: "https://github-project-data-default-rtdb.firebaseio.com"
   };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
+const rtdb = getDatabase(app);
+
+// Enable Offline Persistence
+enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code == 'failed-precondition') {
+        console.warn("Multiple tabs open, persistence can only be enabled in one tab at a time.");
+    } else if (err.code == 'unimplemented') {
+        console.warn("The current browser does not support all of the features needed to enable persistence.");
+    }
+});
 
 // 🔑 Get project ID from URL
 const params = new URLSearchParams(window.location.search);
@@ -100,6 +126,33 @@ if (!projectId) {
 
 let selectedElementId = null;
 let currentUser = null;
+
+// UI Helpers
+function showToast(message, isError = false) {
+    const container = document.getElementById("toast-container");
+    const toast = document.createElement("div");
+    toast.className = `toast ${isError ? 'error' : ''}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// Connection Monitoring
+const connectedRef = ref(rtdb, ".info/connected");
+onValue(connectedRef, (snap) => {
+    const dot = document.getElementById("status-dot");
+    const text = document.getElementById("status-text");
+    if (snap.val() === true) {
+        dot.classList.remove("offline");
+        text.textContent = "Online";
+    } else {
+        dot.classList.add("offline");
+        text.textContent = "Reconnecting...";
+    }
+});
 
 // Helper to get coordinates for both Mouse and Touch
 function getCoords(e) {
@@ -146,6 +199,8 @@ onSnapshot(elementsRef, (snapshot) => {
             }
         }
     });
+}, (error) => {
+    showToast("Permission denied or connection lost.", true);
 });
 
 function createElement(id, data) {
@@ -153,6 +208,7 @@ function createElement(id, data) {
 
     const el = document.createElement("div");
     el.classList.add("canvas-element");
+    if (data.type === "text") el.classList.add("text-element");
     el.dataset.id = id;
 
     el.style.left = data.x + "px";
@@ -162,6 +218,30 @@ function createElement(id, data) {
 
     if (data.type === "circle") {
         el.style.borderRadius = "50%";
+    }
+
+    if (data.type === "text") {
+        const textDiv = document.createElement("div");
+        textDiv.className = "text-content";
+        textDiv.contentEditable = true;
+        textDiv.innerText = data.text || "Click to edit";
+        
+        textDiv.addEventListener("input", (e) => {
+            const now = Date.now();
+            if (now - lastElementUpdateTime > UPDATE_INTERVAL) {
+                lastElementUpdateTime = now;
+                updateElementProperty(id, { text: textDiv.innerText });
+            }
+        });
+
+        textDiv.addEventListener("blur", () => {
+            updateElementProperty(id, { text: textDiv.innerText });
+        });
+
+        textDiv.addEventListener("mousedown", (e) => e.stopPropagation());
+        textDiv.addEventListener("touchstart", (e) => e.stopPropagation());
+
+        el.appendChild(textDiv);
     }
 
     document.getElementById("canvas").appendChild(el);
@@ -178,21 +258,40 @@ function createElement(id, data) {
     el.isDragging = false;
 }
 
+// SURGICAL UPDATE HELPER (Conflict Resolution)
+async function updateElementProperty(id, properties) {
+    try {
+        const ref = doc(db, "projects", projectId, "elements", id);
+        await updateDoc(ref, properties);
+    } catch (err) {
+        console.error("Update failed:", err);
+        showToast("Failed to sync change.", true);
+    }
+}
+
 function updateElementOnScreen(id, data) {
     const el = document.querySelector(`[data-id="${id}"]`);
     if (!el || el.isDragging) return;
 
-    el.style.left = data.x + "px";
-    el.style.top = data.y + "px";
-    el.style.width = data.width + "px";
-    el.style.height = data.height + "px";
+    // Use property-level updates to screen
+    if (data.x !== undefined) el.style.left = data.x + "px";
+    if (data.y !== undefined) el.style.top = data.y + "px";
+    if (data.width !== undefined) el.style.width = data.width + "px";
+    if (data.height !== undefined) el.style.height = data.height + "px";
+
+    if (data.type === "text") {
+        const textDiv = el.querySelector(".text-content");
+        if (textDiv && document.activeElement !== textDiv) {
+            textDiv.innerText = data.text || "";
+        }
+    }
 }
 
 function makeDraggable(el, id) {
     let offsetX, offsetY;
 
     const start = (e) => {
-        if (e.target.classList.contains("resize-handle")) return;
+        if (e.target.classList.contains("resize-handle") || e.target.classList.contains("text-content")) return;
         
         el.isDragging = true;
         const coords = getCoords(e);
@@ -211,7 +310,7 @@ function makeDraggable(el, id) {
             const now = Date.now();
             if (now - lastElementUpdateTime > UPDATE_INTERVAL) {
                 lastElementUpdateTime = now;
-                updateElementLive(id, x, y);
+                updateElementProperty(id, { x, y });
             }
         };
 
@@ -221,7 +320,10 @@ function makeDraggable(el, id) {
             document.removeEventListener("touchmove", move);
             document.removeEventListener("touchend", stop);
             el.isDragging = false;
-            updateElementFinal(id, el);
+            updateElementProperty(id, {
+                x: parseInt(el.style.left),
+                y: parseInt(el.style.top)
+            });
         };
 
         document.addEventListener("mousemove", move);
@@ -232,21 +334,6 @@ function makeDraggable(el, id) {
 
     el.addEventListener("mousedown", start);
     el.addEventListener("touchstart", start, { passive: false });
-}
-
-async function updateElementLive(id, x, y) {
-    const ref = doc(db, "projects", projectId, "elements", id);
-    await updateDoc(ref, { x, y });
-}
-
-async function updateElementFinal(id, el) {
-    const ref = doc(db, "projects", projectId, "elements", id);
-    await updateDoc(ref, {
-        x: parseInt(el.style.left),
-        y: parseInt(el.style.top),
-        width: el.offsetWidth,
-        height: el.offsetHeight
-    });
 }
 
 function makeResizable(el, id) {
@@ -271,15 +358,32 @@ function makeResizable(el, id) {
                 let dx = coords.x - startX;
                 let dy = coords.y - startY;
 
-                if (pos.includes("right")) el.style.width = startWidth + dx + "px";
-                if (pos.includes("left")) {
-                    el.style.width = startWidth - dx + "px";
-                    el.style.left = startLeft + dx + "px";
+                let updates = {};
+                if (pos.includes("right")) {
+                    el.style.width = (startWidth + dx) + "px";
+                    updates.width = startWidth + dx;
                 }
-                if (pos.includes("bottom")) el.style.height = startHeight + dy + "px";
+                if (pos.includes("left")) {
+                    el.style.width = (startWidth - dx) + "px";
+                    el.style.left = (startLeft + dx) + "px";
+                    updates.width = startWidth - dx;
+                    updates.x = startLeft + dx;
+                }
+                if (pos.includes("bottom")) {
+                    el.style.height = (startHeight + dy) + "px";
+                    updates.height = startHeight + dy;
+                }
                 if (pos.includes("top")) {
-                    el.style.height = startHeight - dy + "px";
-                    el.style.top = startTop + dy + "px";
+                    el.style.height = (startHeight - dy) + "px";
+                    el.style.top = (startTop + dy) + "px";
+                    updates.height = startHeight - dy;
+                    updates.y = startTop + dy;
+                }
+
+                const now = Date.now();
+                if (now - lastElementUpdateTime > UPDATE_INTERVAL) {
+                    lastElementUpdateTime = now;
+                    updateElementProperty(id, updates);
                 }
             };
 
@@ -288,7 +392,12 @@ function makeResizable(el, id) {
                 document.removeEventListener("mouseup", stop);
                 document.removeEventListener("touchmove", resize);
                 document.removeEventListener("touchend", stop);
-                updateElementFinal(id, el);
+                updateElementProperty(id, {
+                    width: el.offsetWidth,
+                    height: el.offsetHeight,
+                    x: el.offsetLeft,
+                    y: el.offsetTop
+                });
             };
 
             document.addEventListener("mousemove", resize);
@@ -308,8 +417,10 @@ const editX = document.getElementById("edit-x");
 const editY = document.getElementById("edit-y");
 const editWidth = document.getElementById("edit-width");
 const editHeight = document.getElementById("edit-height");
+const editTextGroup = document.getElementById("edit-text-group");
+const editTextContent = document.getElementById("edit-text-content");
 
-function openSidebar(id, data) {
+async function openSidebar(id, data) {
     selectedElementId = id;
     sidebar.classList.add("open");
     updateSidebarInputs(data);
@@ -320,6 +431,13 @@ function updateSidebarInputs(data) {
     editY.value = data.y;
     editWidth.value = data.width;
     editHeight.value = data.height;
+    
+    if (data.type === "text") {
+        editTextGroup.style.display = "block";
+        editTextContent.value = data.text || "";
+    } else {
+        editTextGroup.style.display = "none";
+    }
 }
 
 function closeSidebar() {
@@ -330,10 +448,9 @@ function closeSidebar() {
 document.getElementById("close-sidebar-btn").onclick = closeSidebar;
 
 [editX, editY, editWidth, editHeight].forEach(input => {
-    input.onchange = async () => {
+    input.onchange = () => {
         if (!selectedElementId) return;
-        const ref = doc(db, "projects", projectId, "elements", selectedElementId);
-        await updateDoc(ref, {
+        updateElementProperty(selectedElementId, {
             x: parseInt(editX.value),
             y: parseInt(editY.value),
             width: parseInt(editWidth.value),
@@ -342,12 +459,20 @@ document.getElementById("close-sidebar-btn").onclick = closeSidebar;
     };
 });
 
+editTextContent.oninput = () => {
+    if (!selectedElementId) return;
+    updateElementProperty(selectedElementId, { text: editTextContent.value });
+};
+
 document.getElementById("delete-object-btn").onclick = async () => {
     if (!selectedElementId) return;
     if (confirm("Delete this object?")) {
-        const ref = doc(db, "projects", projectId, "elements", selectedElementId);
-        await deleteDoc(ref);
-        closeSidebar();
+        try {
+            await deleteDoc(doc(db, "projects", projectId, "elements", selectedElementId));
+            closeSidebar();
+        } catch (err) {
+            showToast("Delete failed.", true);
+        }
     }
 };
 
@@ -373,7 +498,7 @@ function initPresence() {
                 y: coords.y,
                 email: currentUser.email,
                 lastSeen: serverTimestamp()
-            }, { merge: true }).catch(err => console.error("Presence error:", err));
+            }, { merge: true }).catch(() => {});
         }
     };
 
@@ -430,6 +555,10 @@ document.getElementById("add-circle").onclick = () => {
     addDoc(elementsRef, { type: "circle", x: 100, y: 100, width: 50, height: 50 });
 };
 
+document.getElementById("add-text").onclick = () => {
+    addDoc(elementsRef, { type: "text", x: 150, y: 150, width: 150, height: 100, text: "Click to edit" });
+};
+
 document.getElementById("back-btn").onclick = () => {
     window.location.href = "dashboard.html";
 };
@@ -456,44 +585,52 @@ userSearch.oninput = (e) => {
 
 async function loadUsers(searchText) {
     userList.innerHTML = "Searching...";
-    const projectSnap = await getDoc(doc(db, "projects", projectId));
-    const collaborators = projectSnap.data().collaborators || [];
+    try {
+        const projectSnap = await getDoc(doc(db, "projects", projectId));
+        const collaborators = projectSnap.data().collaborators || [];
 
-    const usersQuery = query(collection(db, "users"));
-    const snapshot = await getDocs(usersQuery);
-    
-    userList.innerHTML = "";
-    snapshot.forEach(uDoc => {
-        const userData = uDoc.data();
-        if (userData.email.toLowerCase().includes(searchText.toLowerCase())) {
-            const isCollaborator = collaborators.includes(uDoc.id);
-            const div = document.createElement("div");
-            div.className = "user-item";
-            div.innerHTML = `
-                <span>${userData.email}</span>
-                <button data-uid="${uDoc.id}" ${isCollaborator ? 'disabled class="added"' : ''}>
-                    ${isCollaborator ? 'Added' : 'Add'}
-                </button>
-            `;
-            const btn = div.querySelector("button");
-            if (!isCollaborator) {
-                btn.onclick = async () => {
-                    await addCollaborator(uDoc.id, userData.email, btn);
-                };
+        const usersQuery = query(collection(db, "users"));
+        const snapshot = await getDocs(usersQuery);
+        
+        userList.innerHTML = "";
+        snapshot.forEach(uDoc => {
+            const userData = uDoc.data();
+            if (userData.email.toLowerCase().includes(searchText.toLowerCase())) {
+                const isCollaborator = collaborators.includes(uDoc.id);
+                const div = document.createElement("div");
+                div.className = "user-item";
+                div.innerHTML = `
+                    <span>${userData.email}</span>
+                    <button data-uid="${uDoc.id}" ${isCollaborator ? 'disabled class="added"' : ''}>
+                        ${isCollaborator ? 'Added' : 'Add'}
+                    </button>
+                `;
+                const btn = div.querySelector("button");
+                if (!isCollaborator) {
+                    btn.onclick = async () => {
+                        await addCollaborator(uDoc.id, userData.email, btn);
+                    };
+                }
+                userList.appendChild(div);
             }
-            userList.appendChild(div);
-        }
-    });
+        });
+    } catch (err) {
+        showToast("Error loading users.", true);
+    }
 }
 
 async function addCollaborator(userId, userEmail, btn) {
-    const projectRef = doc(db, "projects", projectId);
-    await updateDoc(projectRef, {
-        collaborators: arrayUnion(userId)
-    });
-    btn.textContent = "Added";
-    btn.disabled = true;
-    btn.classList.add("added");
+    try {
+        const projectRef = doc(db, "projects", projectId);
+        await updateDoc(projectRef, {
+            collaborators: arrayUnion(userId)
+        });
+        btn.textContent = "Added";
+        btn.disabled = true;
+        btn.classList.add("added");
+    } catch (err) {
+        showToast("Failed to add collaborator.", true);
+    }
 }
 
 window.onclick = (event) => {

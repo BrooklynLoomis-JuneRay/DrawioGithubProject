@@ -11,6 +11,65 @@ body {
     background: rgba(0, 0, 0, 0.8);
     position: relative;
     z-index: 100;
+    align-items: center;
+}
+
+/* Connection Status */
+.status-indicator {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    text-transform: uppercase;
+    color: #00ff99;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #00ff99;
+    box-shadow: 0 0 5px #00ff99;
+}
+
+.status-dot.offline {
+    background: #ff0033;
+    box-shadow: 0 0 5px #ff0033;
+}
+
+/* Toast Notifications */
+#toast-container {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.toast {
+    background: rgba(0, 20, 0, 0.9);
+    border: 1px solid #00ff99;
+    color: #00ff99;
+    padding: 12px 24px;
+    border-radius: 5px;
+    font-size: 14px;
+    box-shadow: 0 0 15px rgba(0, 255, 153, 0.3);
+    animation: slideUp 0.3s ease-out;
+}
+
+.toast.error {
+    border-color: #ff0033;
+    color: #ff0033;
+    box-shadow: 0 0 15px rgba(255, 0, 51, 0.3);
+}
+
+@keyframes slideUp {
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
 }
 
 .toolbar button {
@@ -29,6 +88,36 @@ body {
     border: 2px solid #00ff99;
     box-sizing: border-box;
     cursor: move;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.canvas-element.text-element {
+    background: rgba(0, 255, 153, 0.05);
+}
+
+.text-content {
+    width: 100%;
+    height: 100%;
+    padding: 10px;
+    color: #00ff99;
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    font-size: 14px;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    word-break: break-word;
+}
+
+.text-content:focus {
+    background: rgba(0, 255, 153, 0.1);
 }
 
 /* Resize handles */
