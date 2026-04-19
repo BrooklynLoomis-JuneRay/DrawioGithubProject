@@ -12,8 +12,17 @@
 
 <div class="toolbar">
     <button id="back-btn">Back</button>
-    <button id="add-square">Square</button>
-    <button id="add-circle">Circle</button>
+    
+    <div class="dropdown">
+        <button id="add-shape-btn">Add Shape ▼</button>
+        <div class="dropdown-content">
+            <button id="add-square">Square</button>
+            <button id="add-circle">Circle</button>
+            <button id="add-triangle">Triangle</button>
+            <button id="add-star">Star</button>
+        </div>
+    </div>
+
     <button id="add-text">Text</button>
     <button id="collaborate-btn">Collaborate</button>
 
@@ -30,26 +39,48 @@
 <!-- Edit Sidebar -->
 <div id="edit-sidebar" class="edit-sidebar">
     <h3>Edit Object</h3>
+    
     <div class="edit-group">
-        <label>X Position</label>
-        <input type="number" id="edit-x">
+        <label>Position & Size</label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+            <input type="number" id="edit-x" placeholder="X">
+            <input type="number" id="edit-y" placeholder="Y">
+            <input type="number" id="edit-width" placeholder="W">
+            <input type="number" id="edit-height" placeholder="H">
+        </div>
     </div>
+
     <div class="edit-group">
-        <label>Y Position</label>
-        <input type="number" id="edit-y">
+        <label>Rotation (deg)</label>
+        <input type="number" id="edit-rotation">
     </div>
+
     <div class="edit-group">
-        <label>Width</label>
-        <input type="number" id="edit-width">
+        <label>Colors</label>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <div>
+                <label style="font-size: 10px;">Fill</label>
+                <input type="color" id="edit-fill-color">
+            </div>
+            <div>
+                <label style="font-size: 10px;">Border</label>
+                <input type="color" id="edit-border-color">
+            </div>
+        </div>
     </div>
-    <div class="edit-group">
-        <label>Height</label>
-        <input type="number" id="edit-height">
+
+    <div class="edit-group" id="border-toggle-group">
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+            <input type="checkbox" id="edit-show-border" checked>
+            Show Border
+        </label>
     </div>
+
     <div class="edit-group" id="edit-text-group" style="display: none;">
         <label>Text Content</label>
-        <textarea id="edit-text-content" style="background: transparent; border: 1px solid #00ff99; color: #00ff99; padding: 5px; outline: none; resize: vertical;"></textarea>
+        <textarea id="edit-text-content" rows="4" style="background: transparent; border: 1px solid #00ff99; color: #00ff99; padding: 5px; outline: none; resize: vertical;"></textarea>
     </div>
+
     <button id="delete-object-btn" style="margin-top: 10px; border-color: #ff0033; color: #ff0033;">Delete Object</button>
     <button id="close-sidebar-btn" style="margin-top: auto;">Close</button>
 </div>
@@ -108,13 +139,7 @@ const auth = getAuth(app);
 const rtdb = getDatabase(app);
 
 // Enable Offline Persistence
-enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code == 'failed-precondition') {
-        console.warn("Multiple tabs open, persistence can only be enabled in one tab at a time.");
-    } else if (err.code == 'unimplemented') {
-        console.warn("The current browser does not support all of the features needed to enable persistence.");
-    }
-});
+enableIndexedDbPersistence(db).catch(() => {});
 
 // 🔑 Get project ID from URL
 const params = new URLSearchParams(window.location.search);
@@ -154,7 +179,6 @@ onValue(connectedRef, (snap) => {
     }
 });
 
-// Helper to get coordinates for both Mouse and Touch
 function getCoords(e) {
     if (e.touches && e.touches.length > 0) {
         return { x: e.touches[0].pageX, y: e.touches[0].pageY };
@@ -162,7 +186,6 @@ function getCoords(e) {
     return { x: e.pageX, y: e.pageY };
 }
 
-// Protect page
 onAuthStateChanged(auth, (user) => {
     if (!user) {
         window.location.href = "index.html";
@@ -172,14 +195,12 @@ onAuthStateChanged(auth, (user) => {
     }
 });
 
-// Reference elements
 const elementsRef = collection(db, "projects", projectId, "elements");
 
 let lastElementUpdateTime = 0;
 let lastCursorUpdateTime = 0;
 const UPDATE_INTERVAL = 100; // ms
     
-// Real-time listener for elements
 onSnapshot(elementsRef, (snapshot) => {
     snapshot.docChanges().forEach(change => {
         if (change.type === "added") {
@@ -194,13 +215,9 @@ onSnapshot(elementsRef, (snapshot) => {
         if (change.type === "removed") {
             const el = document.querySelector(`[data-id="${change.doc.id}"]`);
             if (el) el.remove();
-            if (selectedElementId === change.doc.id) {
-                closeSidebar();
-            }
+            if (selectedElementId === change.doc.id) closeSidebar();
         }
     });
-}, (error) => {
-    showToast("Permission denied or connection lost.", true);
 });
 
 function createElement(id, data) {
@@ -208,102 +225,116 @@ function createElement(id, data) {
 
     const el = document.createElement("div");
     el.classList.add("canvas-element");
-    if (data.type === "text") el.classList.add("text-element");
     el.dataset.id = id;
 
-    el.style.left = data.x + "px";
-    el.style.top = data.y + "px";
-    el.style.width = data.width + "px";
-    el.style.height = data.height + "px";
-
-    if (data.type === "circle") {
-        el.style.borderRadius = "50%";
-    }
+    applyElementStyles(el, data);
 
     if (data.type === "text") {
         const textDiv = document.createElement("div");
         textDiv.className = "text-content";
-        textDiv.contentEditable = true;
-        textDiv.innerText = data.text || "Click to edit";
-        
-        textDiv.addEventListener("input", (e) => {
-            const now = Date.now();
-            if (now - lastElementUpdateTime > UPDATE_INTERVAL) {
-                lastElementUpdateTime = now;
-                updateElementProperty(id, { text: textDiv.innerText });
-            }
-        });
-
-        textDiv.addEventListener("blur", () => {
-            updateElementProperty(id, { text: textDiv.innerText });
-        });
-
-        textDiv.addEventListener("mousedown", (e) => e.stopPropagation());
-        textDiv.addEventListener("touchstart", (e) => e.stopPropagation());
-
+        textDiv.innerText = data.text || "";
         el.appendChild(textDiv);
+    } else if (data.type === "triangle" || data.type === "star") {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("viewBox", "0 0 100 100");
+        svg.classList.add("shape-svg");
+        
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        if (data.type === "triangle") {
+            path.setAttribute("d", "M50 5 L95 95 L5 95 Z");
+        } else {
+            path.setAttribute("d", "M50 0 L63 38 L100 38 L70 61 L82 100 L50 75 L18 100 L30 61 L0 38 L37 38 Z");
+        }
+        path.setAttribute("fill", data.fillColor || "transparent");
+        path.setAttribute("stroke", data.borderColor || "#00ff99");
+        path.setAttribute("stroke-width", "2");
+        svg.appendChild(path);
+        el.appendChild(svg);
     }
 
     document.getElementById("canvas").appendChild(el);
 
     makeDraggable(el, id);
     makeResizable(el, id);
+    makeRotatable(el, id);
     
-    const clickHandler = (e) => {
+    el.addEventListener("click", (e) => {
         e.stopPropagation();
         openSidebar(id, data);
-    };
-    el.addEventListener("click", clickHandler);
+    });
 
     el.isDragging = false;
 }
 
-// SURGICAL UPDATE HELPER (Conflict Resolution)
+function applyElementStyles(el, data) {
+    el.style.left = data.x + "px";
+    el.style.top = data.y + "px";
+    el.style.width = data.width + "px";
+    el.style.height = data.height + "px";
+    el.style.transform = `rotate(${data.rotation || 0}deg)`;
+    
+    if (data.type === "circle") {
+        el.style.borderRadius = "50%";
+    }
+
+    if (data.showBorder === false) {
+        el.classList.add("no-border");
+    } else {
+        el.classList.remove("no-border");
+    }
+
+    if (data.type === "square" || data.type === "circle" || data.type === "text") {
+        el.style.backgroundColor = data.fillColor || "transparent";
+        el.style.borderColor = data.borderColor || "#00ff99";
+        el.style.color = data.borderColor || "#00ff99";
+    }
+
+    if (data.type === "triangle" || data.type === "star") {
+        const path = el.querySelector("path");
+        if (path) {
+            path.setAttribute("fill", data.fillColor || "transparent");
+            path.setAttribute("stroke", data.borderColor || "#00ff99");
+            if (data.showBorder === false) path.setAttribute("stroke-width", "0");
+            else path.setAttribute("stroke-width", "2");
+        }
+        el.style.border = "none";
+    }
+}
+
 async function updateElementProperty(id, properties) {
     try {
         const ref = doc(db, "projects", projectId, "elements", id);
         await updateDoc(ref, properties);
     } catch (err) {
-        console.error("Update failed:", err);
-        showToast("Failed to sync change.", true);
+        showToast("Sync failed.", true);
     }
 }
 
 function updateElementOnScreen(id, data) {
     const el = document.querySelector(`[data-id="${id}"]`);
-    if (!el || el.isDragging) return;
-
-    // Use property-level updates to screen
-    if (data.x !== undefined) el.style.left = data.x + "px";
-    if (data.y !== undefined) el.style.top = data.y + "px";
-    if (data.width !== undefined) el.style.width = data.width + "px";
-    if (data.height !== undefined) el.style.height = data.height + "px";
-
+    if (!el || el.isDragging || el.isRotating) return;
+    applyElementStyles(el, data);
+    
     if (data.type === "text") {
         const textDiv = el.querySelector(".text-content");
-        if (textDiv && document.activeElement !== textDiv) {
-            textDiv.innerText = data.text || "";
-        }
+        if (textDiv) textDiv.innerText = data.text || "";
     }
 }
 
 function makeDraggable(el, id) {
     let offsetX, offsetY;
-
     const start = (e) => {
-        if (e.target.classList.contains("resize-handle") || e.target.classList.contains("text-content")) return;
-        
+        if (e.target.classList.contains("resize-handle") || e.target.classList.contains("rotate-handle")) return;
         el.isDragging = true;
         const coords = getCoords(e);
         const rect = el.getBoundingClientRect();
-        offsetX = coords.x - rect.left;
-        offsetY = coords.y - rect.top;
+        offsetX = coords.x - el.offsetLeft;
+        offsetY = coords.y - el.offsetTop;
 
         const move = (e) => {
             const coords = getCoords(e);
             const x = coords.x - offsetX;
             const y = coords.y - offsetY;
-
             el.style.left = x + "px";
             el.style.top = y + "px";
 
@@ -320,18 +351,13 @@ function makeDraggable(el, id) {
             document.removeEventListener("touchmove", move);
             document.removeEventListener("touchend", stop);
             el.isDragging = false;
-            updateElementProperty(id, {
-                x: parseInt(el.style.left),
-                y: parseInt(el.style.top)
-            });
+            updateElementProperty(id, { x: el.offsetLeft, y: el.offsetTop });
         };
-
         document.addEventListener("mousemove", move);
         document.addEventListener("mouseup", stop);
         document.addEventListener("touchmove", move, { passive: false });
         document.addEventListener("touchend", stop);
     };
-
     el.addEventListener("mousedown", start);
     el.addEventListener("touchstart", start, { passive: false });
 }
@@ -346,38 +372,24 @@ function makeResizable(el, id) {
         const start = (e) => {
             e.stopPropagation();
             const startCoords = getCoords(e);
-            let startX = startCoords.x;
-            let startY = startCoords.y;
             let startWidth = el.offsetWidth;
             let startHeight = el.offsetHeight;
-            let startLeft = el.offsetLeft;
-            let startTop = el.offsetTop;
+            let startX = startCoords.x;
+            let startY = startCoords.y;
 
             const resize = (e) => {
                 const coords = getCoords(e);
                 let dx = coords.x - startX;
                 let dy = coords.y - startY;
-
+                
                 let updates = {};
                 if (pos.includes("right")) {
                     el.style.width = (startWidth + dx) + "px";
                     updates.width = startWidth + dx;
                 }
-                if (pos.includes("left")) {
-                    el.style.width = (startWidth - dx) + "px";
-                    el.style.left = (startLeft + dx) + "px";
-                    updates.width = startWidth - dx;
-                    updates.x = startLeft + dx;
-                }
                 if (pos.includes("bottom")) {
                     el.style.height = (startHeight + dy) + "px";
                     updates.height = startHeight + dy;
-                }
-                if (pos.includes("top")) {
-                    el.style.height = (startHeight - dy) + "px";
-                    el.style.top = (startTop + dy) + "px";
-                    updates.height = startHeight - dy;
-                    updates.y = startTop + dy;
                 }
 
                 const now = Date.now();
@@ -392,31 +404,69 @@ function makeResizable(el, id) {
                 document.removeEventListener("mouseup", stop);
                 document.removeEventListener("touchmove", resize);
                 document.removeEventListener("touchend", stop);
-                updateElementProperty(id, {
-                    width: el.offsetWidth,
-                    height: el.offsetHeight,
-                    x: el.offsetLeft,
-                    y: el.offsetTop
-                });
+                updateElementProperty(id, { width: el.offsetWidth, height: el.offsetHeight });
             };
-
             document.addEventListener("mousemove", resize);
             document.addEventListener("mouseup", stop);
             document.addEventListener("touchmove", resize, { passive: false });
             document.addEventListener("touchend", stop);
         };
-
         handle.addEventListener("mousedown", start);
         handle.addEventListener("touchstart", start, { passive: false });
     });
 }
 
-// Sidebar Logic
+function makeRotatable(el, id) {
+    const handle = document.createElement("div");
+    handle.classList.add("rotate-handle");
+    el.appendChild(handle);
+
+    const start = (e) => {
+        e.stopPropagation();
+        el.isRotating = true;
+        const rect = el.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+
+        const rotate = (e) => {
+            const coords = getCoords(e);
+            const angle = Math.atan2(coords.y - centerY, coords.x - centerX);
+            const degree = angle * (180 / Math.PI) + 90;
+            el.style.transform = `rotate(${degree}deg)`;
+
+            const now = Date.now();
+            if (now - lastElementUpdateTime > UPDATE_INTERVAL) {
+                lastElementUpdateTime = now;
+                updateElementProperty(id, { rotation: degree });
+            }
+        };
+
+        const stop = () => {
+            document.removeEventListener("mousemove", rotate);
+            document.removeEventListener("mouseup", stop);
+            document.removeEventListener("touchmove", rotate);
+            document.removeEventListener("touchend", stop);
+            el.isRotating = false;
+        };
+        document.addEventListener("mousemove", rotate);
+        document.addEventListener("mouseup", stop);
+        document.addEventListener("touchmove", rotate, { passive: false });
+        document.addEventListener("touchend", stop);
+    };
+    handle.addEventListener("mousedown", start);
+    handle.addEventListener("touchstart", start, { passive: false });
+}
+
+// Sidebar Controls
 const sidebar = document.getElementById("edit-sidebar");
 const editX = document.getElementById("edit-x");
 const editY = document.getElementById("edit-y");
 const editWidth = document.getElementById("edit-width");
 const editHeight = document.getElementById("edit-height");
+const editRotation = document.getElementById("edit-rotation");
+const editFill = document.getElementById("edit-fill-color");
+const editBorder = document.getElementById("edit-border-color");
+const editShowBorder = document.getElementById("edit-show-border");
 const editTextGroup = document.getElementById("edit-text-group");
 const editTextContent = document.getElementById("edit-text-content");
 
@@ -427,10 +477,14 @@ async function openSidebar(id, data) {
 }
 
 function updateSidebarInputs(data) {
-    editX.value = data.x;
-    editY.value = data.y;
-    editWidth.value = data.width;
-    editHeight.value = data.height;
+    editX.value = Math.round(data.x);
+    editY.value = Math.round(data.y);
+    editWidth.value = Math.round(data.width);
+    editHeight.value = Math.round(data.height);
+    editRotation.value = Math.round(data.rotation || 0);
+    editFill.value = data.fillColor || "#000000";
+    editBorder.value = data.borderColor || "#00ff99";
+    editShowBorder.checked = data.showBorder !== false;
     
     if (data.type === "text") {
         editTextGroup.style.display = "block";
@@ -447,199 +501,113 @@ function closeSidebar() {
 
 document.getElementById("close-sidebar-btn").onclick = closeSidebar;
 
-[editX, editY, editWidth, editHeight].forEach(input => {
-    input.onchange = () => {
+const sidebarInputs = [editX, editY, editWidth, editHeight, editRotation, editFill, editBorder, editShowBorder, editTextContent];
+sidebarInputs.forEach(input => {
+    const eventType = (input.type === "checkbox" || input.type === "color") ? "change" : "input";
+    input.addEventListener(eventType, () => {
         if (!selectedElementId) return;
         updateElementProperty(selectedElementId, {
             x: parseInt(editX.value),
             y: parseInt(editY.value),
             width: parseInt(editWidth.value),
-            height: parseInt(editHeight.value)
+            height: parseInt(editHeight.value),
+            rotation: parseInt(editRotation.value),
+            fillColor: editFill.value,
+            borderColor: editBorder.value,
+            showBorder: editShowBorder.checked,
+            text: editTextContent.value
         });
-    };
+    });
 });
 
-editTextContent.oninput = () => {
-    if (!selectedElementId) return;
-    updateElementProperty(selectedElementId, { text: editTextContent.value });
-};
-
 document.getElementById("delete-object-btn").onclick = async () => {
-    if (!selectedElementId) return;
-    if (confirm("Delete this object?")) {
-        try {
-            await deleteDoc(doc(db, "projects", projectId, "elements", selectedElementId));
-            closeSidebar();
-        } catch (err) {
-            showToast("Delete failed.", true);
-        }
+    if (selectedElementId && confirm("Delete object?")) {
+        await deleteDoc(doc(db, "projects", projectId, "elements", selectedElementId));
+        closeSidebar();
     }
 };
 
-document.getElementById("canvas").addEventListener("click", () => {
-    closeSidebar();
-});
+document.getElementById("canvas").addEventListener("click", closeSidebar);
 
-// --- REAL-TIME PRESENCE (CURSORS) ---
-
+// Presence
 const presenceRef = collection(db, "projects", projectId, "presence");
-
 function initPresence() {
     const updateMyPosition = (e) => {
         if (!currentUser) return;
-        
         const now = Date.now();
         if (now - lastCursorUpdateTime > 100) { 
             lastCursorUpdateTime = now;
             const coords = getCoords(e);
-            const cursorRef = doc(presenceRef, currentUser.uid);
-            setDoc(cursorRef, {
-                x: coords.x,
-                y: coords.y,
-                email: currentUser.email,
-                lastSeen: serverTimestamp()
-            }, { merge: true }).catch(() => {});
+            setDoc(doc(presenceRef, currentUser.uid), {
+                x: coords.x, y: coords.y, email: currentUser.email, lastSeen: serverTimestamp()
+            }, { merge: true });
         }
     };
-
     document.addEventListener("mousemove", updateMyPosition);
     document.addEventListener("touchmove", updateMyPosition, { passive: true });
-
     onSnapshot(presenceRef, (snapshot) => {
         snapshot.docChanges().forEach(change => {
             const id = change.doc.id;
             if (currentUser && id === currentUser.uid) return;
-
             if (change.type === "added" || change.type === "modified") {
-                updateRemoteCursor(id, change.doc.data());
+                let el = document.getElementById(`cursor-${id}`);
+                if (!el) {
+                    el = document.createElement("div");
+                    el.id = `cursor-${id}`;
+                    el.className = "remote-cursor";
+                    el.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20"><path d="M7,2l12,11.2l-5.8,0.5l3.3,7.3l-2.2,1l-3.2-7.4L7,19V2z"/></svg><div class="cursor-label">${change.doc.data().email.split('@')[0]}</div>`;
+                    document.body.appendChild(el);
+                }
+                el.style.transform = `translate(${change.doc.data().x}px, ${change.doc.data().y}px)`;
             }
-            if (change.type === "removed") {
-                const el = document.getElementById(`cursor-${id}`);
-                if (el) el.remove();
-            }
+            if (change.type === "removed") document.getElementById(`cursor-${id}`)?.remove();
         });
     });
+}
 
-    window.addEventListener("beforeunload", () => {
-        if (currentUser) {
-            deleteDoc(doc(presenceRef, currentUser.uid));
+// Toolbar Handlers
+const addShape = (type) => {
+    addDoc(elementsRef, { type, x: 100, y: 100, width: 100, height: 100, rotation: 0, fillColor: "transparent", borderColor: "#00ff99", showBorder: true });
+};
+document.getElementById("add-square").onclick = () => addShape("square");
+document.getElementById("add-circle").onclick = () => addShape("circle");
+document.getElementById("add-triangle").onclick = () => addShape("triangle");
+document.getElementById("add-star").onclick = () => addShape("star");
+document.getElementById("add-text").onclick = () => addDoc(elementsRef, { type: "text", x: 150, y: 150, width: 150, height: 50, rotation: 0, text: "New Text", fillColor: "transparent", borderColor: "#00ff99", showBorder: true });
+document.getElementById("back-btn").onclick = () => window.location.href = "dashboard.html";
+
+// Collaborate Modal
+const modal = document.getElementById("collaborate-modal");
+document.getElementById("collaborate-btn").onclick = () => {
+    modal.style.display = "block";
+    loadUsers("");
+};
+document.getElementById("close-modal-btn").onclick = () => modal.style.display = "none";
+document.getElementById("user-search").oninput = (e) => loadUsers(e.target.value);
+
+async function loadUsers(searchText) {
+    const projectSnap = await getDoc(doc(db, "projects", projectId));
+    const collaborators = projectSnap.data().collaborators || [];
+    const snapshot = await getDocs(collection(db, "users"));
+    const list = document.getElementById("user-list");
+    list.innerHTML = "";
+    snapshot.forEach(uDoc => {
+        const userData = uDoc.data();
+        if (userData.email.toLowerCase().includes(searchText.toLowerCase())) {
+            const isColl = collaborators.includes(uDoc.id);
+            const div = document.createElement("div");
+            div.className = "user-item";
+            div.innerHTML = `<span>${userData.email}</span><button ${isColl ? 'disabled class="added"' : ''}>${isColl ? 'Added' : 'Add'}</button>`;
+            if (!isColl) div.querySelector("button").onclick = async () => {
+                await updateDoc(doc(db, "projects", projectId), { collaborators: arrayUnion(uDoc.id) });
+                loadUsers(searchText);
+            };
+            list.appendChild(div);
         }
     });
 }
 
-function updateRemoteCursor(id, data) {
-    let el = document.getElementById(`cursor-${id}`);
-    if (!el) {
-        el = document.createElement("div");
-        el.id = `cursor-${id}`;
-        el.className = "remote-cursor";
-        el.innerHTML = `
-            <svg viewBox="0 0 24 24" width="20" height="20">
-                <path d="M7,2l12,11.2l-5.8,0.5l3.3,7.3l-2.2,1l-3.2-7.4L7,19V2z"/>
-            </svg>
-            <div class="cursor-label">${data.email.split('@')[0]}</div>
-        `;
-        document.body.appendChild(el);
-    }
-    el.style.transform = `translate(${data.x}px, ${data.y}px)`;
-}
-
-// --- END PRESENCE ---
-
-// Toolbar actions
-document.getElementById("add-square").onclick = () => {
-    addDoc(elementsRef, { type: "square", x: 50, y: 50, width: 50, height: 50 });
-};
-
-document.getElementById("add-circle").onclick = () => {
-    addDoc(elementsRef, { type: "circle", x: 100, y: 100, width: 50, height: 50 });
-};
-
-document.getElementById("add-text").onclick = () => {
-    addDoc(elementsRef, { type: "text", x: 150, y: 150, width: 150, height: 100, text: "Click to edit" });
-};
-
-document.getElementById("back-btn").onclick = () => {
-    window.location.href = "dashboard.html";
-};
-
-// Collaborate Modal Logic
-const modal = document.getElementById("collaborate-modal");
-const collBtn = document.getElementById("collaborate-btn");
-const closeBtn = document.getElementById("close-modal-btn");
-const userSearch = document.getElementById("user-search");
-const userList = document.getElementById("user-list");
-
-collBtn.onclick = () => {
-    modal.style.display = "block";
-    loadUsers("");
-};
-
-closeBtn.onclick = () => {
-    modal.style.display = "none";
-};
-
-userSearch.oninput = (e) => {
-    loadUsers(e.target.value);
-};
-
-async function loadUsers(searchText) {
-    userList.innerHTML = "Searching...";
-    try {
-        const projectSnap = await getDoc(doc(db, "projects", projectId));
-        const collaborators = projectSnap.data().collaborators || [];
-
-        const usersQuery = query(collection(db, "users"));
-        const snapshot = await getDocs(usersQuery);
-        
-        userList.innerHTML = "";
-        snapshot.forEach(uDoc => {
-            const userData = uDoc.data();
-            if (userData.email.toLowerCase().includes(searchText.toLowerCase())) {
-                const isCollaborator = collaborators.includes(uDoc.id);
-                const div = document.createElement("div");
-                div.className = "user-item";
-                div.innerHTML = `
-                    <span>${userData.email}</span>
-                    <button data-uid="${uDoc.id}" ${isCollaborator ? 'disabled class="added"' : ''}>
-                        ${isCollaborator ? 'Added' : 'Add'}
-                    </button>
-                `;
-                const btn = div.querySelector("button");
-                if (!isCollaborator) {
-                    btn.onclick = async () => {
-                        await addCollaborator(uDoc.id, userData.email, btn);
-                    };
-                }
-                userList.appendChild(div);
-            }
-        });
-    } catch (err) {
-        showToast("Error loading users.", true);
-    }
-}
-
-async function addCollaborator(userId, userEmail, btn) {
-    try {
-        const projectRef = doc(db, "projects", projectId);
-        await updateDoc(projectRef, {
-            collaborators: arrayUnion(userId)
-        });
-        btn.textContent = "Added";
-        btn.disabled = true;
-        btn.classList.add("added");
-    } catch (err) {
-        showToast("Failed to add collaborator.", true);
-    }
-}
-
-window.onclick = (event) => {
-    if (event.target == modal) {
-        modal.style.display = "none";
-    }
-};
-
+window.onclick = (e) => { if (e.target == modal) modal.style.display = "none"; };
 </script>
-
 </body>
 </html>
