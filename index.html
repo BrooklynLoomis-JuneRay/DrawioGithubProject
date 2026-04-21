@@ -88,7 +88,11 @@ import {
 import { 
     getFirestore, 
     doc, 
-    setDoc 
+    setDoc,
+    collection,
+    query,
+    where,
+    getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -107,17 +111,39 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 // LOGIN
-document.getElementById("login-form").addEventListener("submit", function(e) {
+document.getElementById("login-form").addEventListener("submit", async function(e) {
     e.preventDefault();
 
-    const email = this.querySelector("input[type='text']").value;
+    const loginInput = this.querySelector("input[type='text']").value;
     const password = this.querySelector("input[type='password']").value;
+
+    let email = loginInput;
+
+    // Check if input is a username (doesn't contain @)
+    if (!loginInput.includes("@")) {
+        try {
+            const usersRef = collection(db, "users");
+            const q = query(usersRef, where("username", "==", loginInput));
+            const querySnapshot = await getDocs(q);
+
+            if (querySnapshot.empty) {
+                showMessage("USER NOT FOUND", false);
+                return;
+            }
+
+            // Get email from the found user document
+            email = querySnapshot.docs[0].data().email;
+        } catch (err) {
+            showMessage("SEARCH ERROR", false);
+            return;
+        }
+    }
 
     signInWithEmailAndPassword(auth, email, password)
         .then(() => {
             window.location.href = "dashboard.html";
         })
-        .catch(() => {
+        .catch((err) => {
             showMessage("ACCESS DENIED", false);
         });
 });
