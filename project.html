@@ -133,6 +133,7 @@ if (!projectId) window.location.href = "dashboard.html";
 
 let selectedElementId = null;
 let currentUser = null;
+let currentUserData = null;
 let allElements = {}; 
 
 // Color Helpers
@@ -169,9 +170,16 @@ function getCoords(e) {
     return { x: e.pageX, y: e.pageY };
 }
 
-onAuthStateChanged(auth, (user) => {
-    if (!user) window.location.href = "index.html";
-    else { currentUser = user; initPresence(); }
+onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+        window.location.href = "index.html";
+    } else {
+        currentUser = user;
+        // Fetch username for presence
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        currentUserData = userDoc.exists() ? userDoc.data() : { username: user.email.split('@')[0], email: user.email };
+        initPresence();
+    }
 });
 
 const elementsRef = collection(db, "projects", projectId, "elements");
@@ -236,7 +244,6 @@ function applyElementStyles(el, data) {
     el.style.height = data.height + "px";
     el.style.transform = `rotate(${data.rotation || 0}deg)`;
     
-    // Independent Opacity for Fill
     const fillRGBA = hexToRgba(data.fillColor || "#000000", data.fillOpacity ?? 1);
     const borderSolid = data.borderColor || "#00ff99";
 
@@ -299,7 +306,8 @@ function makeDraggable(el, id) {
         document.addEventListener("mousemove", move); document.addEventListener("mouseup", stop);
         document.addEventListener("touchmove", move, { passive: false }); document.addEventListener("touchend", stop);
     };
-    el.addEventListener("mousedown", start); el.addEventListener("touchstart", start, { passive: false });
+    el.addEventListener("mousedown", start);
+    el.addEventListener("touchstart", start, { passive: false });
 }
 
 function makeResizable(el, id) {
@@ -398,10 +406,7 @@ function closeSidebar() { selectedElementId = null; sidebar.classList.remove("op
 document.getElementById("close-sidebar-btn").onclick = closeSidebar;
 
 [editX, editY, editW, editH, editRot, editFC, editBC, editSB, editFO, editTC].forEach(input => {
-    const eventType = (input.type === "checkbox" || input.type === "range" || input.type === "color") ? "input" : "input";
-    // Checkbox uses 'change' for safety in some browsers, but input works for range/color/text
     const finalEvent = (input.type === "checkbox") ? "change" : "input";
-
     input.addEventListener(finalEvent, () => {
         if (!selectedElementId) return;
         updateElementProperty(selectedElementId, {
@@ -421,30 +426,66 @@ document.getElementById("delete-object-btn").onclick = async () => {
 };
 document.getElementById("canvas").addEventListener("click", (e) => { if (e.target.id === "canvas") closeSidebar(); });
 
+// --- PRESENCE LOGIC ---
 const presenceRef = collection(db, "projects", projectId, "presence");
 function initPresence() {
-    document.addEventListener("mousemove", (e) => {
-        if (!currentUser || Date.now() - lastCursorUpdateTime < 100) return;
-        lastCursorUpdateTime = Date.now(); const c = getCoords(e);
-        setDoc(doc(presenceRef, currentUser.uid), { x: c.x, y: c.y, email: currentUser.email, lastSeen: serverTimestamp() }, { merge: true });
-    });
-    onSnapshot(presenceRef, (s) => {
-        s.docChanges().forEach(ch => {
-            const id = ch.doc.id; if (currentUser && id === currentUser.uid) return;
-            if (ch.type === "added" || ch.type === "modified") {
-                let el = document.getElementById(`cursor-${id}`);
-                if (!el) {
-                    el = document.createElement("div"); el.id = `cursor-${id}`; el.className = "remote-cursor";
-                    el.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20"><path d="M7,2l12,11.2l-5.8,0.5l3.3,7.3l-2.2,1l-3.2-7.4L7,19V2z"/></svg><div class="cursor-label">${ch.doc.data().email.split('@')[0]}</div>`;
-                    document.body.appendChild(el);
-                }
-                el.style.transform = `translate(${ch.doc.data().x}px, ${ch.doc.data().y}px)`;
+    if (!currentUser || !currentUserData) return;
+
+    // Initial write so others see you immediately
+    setDoc(doc(presenceRef, currentUser.uid), {
+        x: 0, y: 0, 
+        username: currentUserData.username, 
+        lastSeen: serverTimestamp()
+    }, { merge: true }).catch(err => console.error("Presence Initial Write Error:", err));
+
+    const updateMyPosition = (e) => {
+        if (!currentUser || Date.now() - lastCursorUpdateTime < 50) return; // Faster updates (50ms)
+        lastCursorUpdateTime = Date.now(); 
+        const c = getCoords(e);
+        setDoc(doc(presenceRef, currentUser.uid), { 
+            x: c.x, y: c.y, 
+            username: currentUserData.username, 
+            lastSeen: serverTimestamp() 
+        }, { merge: true }).catch(err => console.error("Presence Update Error:", err));
+    };
+
+    document.addEventListener("mousemove", updateMyPosition);
+    document.addEventListener("touchmove", updateMyPosition, { passive: true });
+
+    onSnapshot(presenceRef, (snapshot) => {
+        snapshot.docChanges().forEach(change => {
+            const id = change.doc.id; 
+            if (currentUser && id === currentUser.uid) return;
+            
+            if (change.type === "added" || change.type === "modified") {
+                const data = change.doc.data();
+                updateRemoteCursor(id, data);
             }
-            if (ch.type === "removed") document.getElementById(`cursor-${id}`)?.remove();
+            if (change.type === "removed") {
+                document.getElementById(`cursor-${id}`)?.remove();
+            }
         });
-    });
+    }, (error) => console.error("Presence Snapshot Error:", error));
 }
 
+function updateRemoteCursor(id, data) {
+    let el = document.getElementById(`cursor-${id}`);
+    if (!el) {
+        el = document.createElement("div");
+        el.id = `cursor-${id}`;
+        el.className = "remote-cursor";
+        el.innerHTML = `
+            <svg viewBox="0 0 24 24" width="20" height="20">
+                <path d="M7,2l12,11.2l-5.8,0.5l3.3,7.3l-2.2,1l-3.2-7.4L7,19V2z"/>
+            </svg>
+            <div class="cursor-label">${data.username || "User"}</div>
+        `;
+        document.body.appendChild(el);
+    }
+    el.style.transform = `translate(${data.x}px, ${data.y}px)`;
+}
+
+// --- TOOLBAR ---
 const addS = (type) => addDoc(elementsRef, { type, x: 100, y: 100, width: 100, height: 100, rotation: 0, fillColor: "transparent", fillOpacity: 1, borderColor: "#00ff99", showBorder: true });
 document.getElementById("add-square").onclick = () => addS("square");
 document.getElementById("add-circle").onclick = () => addS("circle");
