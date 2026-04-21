@@ -11,26 +11,17 @@ service cloud.firestore {
 
     // Projects
     match /projects/{projectId} {
-      allow read, update: if request.auth != null && (
-        request.auth.uid == resource.data.owner || 
-        request.auth.uid in resource.data.collaborators
-      );
-      
-      allow delete: if request.auth != null && request.auth.uid == resource.data.owner;
-      allow create: if request.auth != null;
+      allow read, write: if request.auth != null;
 
-      // Elements Sub-collection
       match /elements/{elementId} {
-        allow read, write: if request.auth != null; // Simplified for debugging, we can tighten later
+        allow read, write: if request.auth != null;
       }
+    }
 
-      // Presence Sub-collection (for cursors)
-      match /presence/{userId} {
-        // Allow reading if you are the owner or a collaborator of the parent project
-        allow read: if request.auth != null; 
-        // Allow writing only your own presence doc
-        allow write: if request.auth != null && request.auth.uid == userId;
-      }
+    // TOP LEVEL PRESENCE (New Approach)
+    match /active_cursors/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
   }
 }
